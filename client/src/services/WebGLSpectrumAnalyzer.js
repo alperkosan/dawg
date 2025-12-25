@@ -297,16 +297,13 @@ export class WebGLSpectrumAnalyzer {
   }
 
   /**
-   * AUDIO CONNECTIONS
-   */
-
-  /**
    * Connect audio source
    */
   connectSource(sourceNode) {
-    if (this.sourceNode) {
+    // ✅ FIX: Only disconnect if connecting a DIFFERENT source
+    // This prevents breaking the audio chain when UI reopens with same source
+    if (this.sourceNode && this.sourceNode !== sourceNode) {
       try {
-        // ✅ FIX: Try to disconnect old source, but don't throw if already disconnected
         this.sourceNode.disconnect(this.analyser);
       } catch (error) {
         // Already disconnected - this is fine, ignore the error
@@ -314,9 +311,18 @@ export class WebGLSpectrumAnalyzer {
       }
     }
 
-    this.sourceNode = sourceNode;
-    this.sourceNode.connect(this.analyser);
-    console.log('🎨 WebGL Spectrum: Connected audio source');
+    // ✅ FIX: Only connect if not already connected to this source
+    if (this.sourceNode !== sourceNode) {
+      this.sourceNode = sourceNode;
+      try {
+        this.sourceNode.connect(this.analyser);
+        console.log('🎨 WebGL Spectrum: Connected audio source');
+      } catch (error) {
+        console.warn('⚠️ Failed to connect spectrum analyzer:', error);
+      }
+    } else {
+      console.log('ℹ️ Source already connected, skipping reconnection');
+    }
   }
 
   /**
@@ -715,8 +721,13 @@ import { useEffect, useRef } from 'react';
 export const useWebGLSpectrum = (audioNode, audioContext, options = {}) => {
   const canvasRef = useRef(null);
   const analyzerRef = useRef(null);
+  const audioNodeRef = useRef(null); // ✅ FIX: Track audio node to detect changes
+  const mountCountRef = useRef(0); // ✅ FIX: Track mount count for Strict Mode
 
   useEffect(() => {
+    mountCountRef.current += 1;
+    const currentMountCount = mountCountRef.current;
+
     if (!canvasRef.current || !audioContext || !audioNode) {
       console.log('[useWebGLSpectrum] Waiting for dependencies:', {
         hasCanvas: !!canvasRef.current,
@@ -726,24 +737,52 @@ export const useWebGLSpectrum = (audioNode, audioContext, options = {}) => {
       return;
     }
 
+    // ✅ FIX: If analyzer exists and audio node hasn't changed, skip re-initialization
+    if (analyzerRef.current && audioNodeRef.current === audioNode) {
+      console.log('[useWebGLSpectrum] Analyzer already initialized with same audio node, skipping');
+      return;
+    }
+
+    // ✅ FIX: If audio node changed, update the connection without recreating analyzer
+    if (analyzerRef.current && audioNodeRef.current !== audioNode) {
+      console.log('[useWebGLSpectrum] Audio node changed, updating connection');
+      analyzerRef.current.connectSource(audioNode);
+      audioNodeRef.current = audioNode;
+      return;
+    }
+
     console.log('[useWebGLSpectrum] Initializing analyzer');
 
-    // Create analyzer
+    // Create analyzer (only on first mount)
     const analyzer = new WebGLSpectrumAnalyzer(canvasRef.current, audioContext, options);
     analyzer.connectSource(audioNode);
     analyzer.start();
     analyzerRef.current = analyzer;
+    audioNodeRef.current = audioNode;
 
     console.log('[useWebGLSpectrum] Analyzer started');
 
-    // Cleanup
+    // ✅ FIX: Only cleanup if this is the LAST mount (not React Strict Mode remount)
     return () => {
-      console.log('[useWebGLSpectrum] Cleaning up analyzer');
-      analyzer.dispose();
-    };
-  }, [audioContext, audioNode]);
+      // Wait a tick to see if component remounts (Strict Mode behavior)
+      setTimeout(() => {
+        // If mount count increased, this was a Strict Mode unmount, don't cleanup
+        if (mountCountRef.current > currentMountCount) {
+          console.log('[useWebGLSpectrum] Skipping cleanup - React Strict Mode remount detected');
+          return;
+        }
 
-  // Update options
+        console.log('[useWebGLSpectrum] Component unmounting, cleaning up analyzer');
+        if (analyzerRef.current) {
+          analyzerRef.current.dispose();
+          analyzerRef.current = null;
+        }
+        audioNodeRef.current = null;
+      }, 0);
+    };
+  }, [audioContext, audioNode]); // ✅ FIX: Removed 'options' from dependencies to prevent re-initialization
+
+  // Update options dynamically without recreating analyzer
   useEffect(() => {
     if (!analyzerRef.current) return;
 
@@ -761,3 +800,4 @@ export const useWebGLSpectrum = (audioNode, audioContext, options = {}) => {
 };
 
 export default WebGLSpectrumAnalyzer;
+

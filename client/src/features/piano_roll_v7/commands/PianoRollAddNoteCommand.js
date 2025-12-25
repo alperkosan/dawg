@@ -39,31 +39,48 @@ export class PianoRollAddNoteCommand extends Command {
             return durationMap[length] || '16n';
         };
 
-        // ✅ FL STUDIO STYLE: Get pattern length and extend ALL new notes to pattern length
-        // ALL NEW NOTES should be oval (visualLength = 1) unless explicitly resized
-        const patternLengthInSteps = calculatePatternLoopLength(activePattern) || 64;
+        // ✅ FIX: Piano roll notes should use the actual written length, not extend to pattern end
+        // Only sequencer notes (from AddNoteCommand) should be oval (1 step visual, pattern-length audio)
+        // Piano roll notes should have both visualLength and length equal to the written length
         
-        // ✅ FL STUDIO STYLE: visualLength is ALWAYS 1 for new notes (unless resized later)
-        // Even if length is provided (from lastNoteDuration), visualLength stays 1
+        // ✅ FIX: Use provided length if valid, otherwise default to 1 step
         let finalLength = this.length;
-        const visualLength = 1; // ✅ ALWAYS 1 step visual for new notes
+        let visualLength = this.length || 1; // ✅ Piano roll: visualLength = actual length
         
-        // If length not specified, is default (1), or is pattern length (from lastNoteDuration), extend to pattern length
-        if (!this.length || this.length <= 0 || this.length === 1 || this.length >= patternLengthInSteps * 0.8) {
-            // Calculate length from note start to pattern end
+        // Only extend to pattern end if length is explicitly 1 (sequencer-style trigger)
+        // This distinguishes between:
+        // - Sequencer notes: length=1 → extend to pattern end (oval note)
+        // - Piano roll notes: length=N → use N steps (normal note)
+        if (this.length === 1) {
+            // ✅ SEQUENCER STYLE: 1-step trigger → extend to pattern end (oval note)
+            const patternLengthInSteps = calculatePatternLoopLength(activePattern) || 64;
             const noteStartStep = this.startTime;
             const noteLengthInSteps = Math.max(1, patternLengthInSteps - noteStartStep);
             finalLength = noteLengthInSteps;
+            visualLength = 1; // Visual stays 1 step for oval notes
             
-            console.log(`🎼 PianoRollAddNoteCommand: New note, extending to pattern length:`, {
+            console.log(`🎼 PianoRollAddNoteCommand: 1-step trigger, extending to pattern length:`, {
                 patternLengthInSteps,
                 noteStartStep,
                 noteLengthInSteps,
                 finalLength,
                 visualLength
             });
+        } else if (!this.length || this.length <= 0) {
+            // No length specified → default to 1 step
+            finalLength = 1;
+            visualLength = 1;
+        } else {
+            // ✅ PIANO ROLL STYLE: Use provided length (normal note, not oval)
+            finalLength = this.length;
+            visualLength = this.length;
+            
+            console.log(`🎼 PianoRollAddNoteCommand: Normal note with length:`, {
+                length: this.length,
+                finalLength,
+                visualLength
+            });
         }
-        // else: Use provided length for audio, but visualLength stays 1
 
         // Create note in Channel Rack format (for pattern storage)
         // Note: We store both visualLength (for display) and duration/length (for audio)

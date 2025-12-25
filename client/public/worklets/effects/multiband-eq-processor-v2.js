@@ -23,15 +23,22 @@ class MultiBandEQProcessorV2 extends AudioWorkletProcessor {
 
     // Default bands (3-band EQ)
     this.bands = [
-      { id: 'band-1', type: 'lowshelf', frequency: 100, gain: 0, q: 0.71, active: true },
-      { id: 'band-2', type: 'peaking', frequency: 1000, gain: 0, q: 1.5, active: true },
-      { id: 'band-3', type: 'highshelf', frequency: 8000, gain: 0, q: 0.71, active: true }
+      { id: 'band-1', type: 'lowshelf', frequency: 100, gain: 0, q: 0.71, active: true, dynamicEnabled: false, threshold: -12, ratio: 2, attack: 10, release: 100 },
+      { id: 'band-2', type: 'peaking', frequency: 1000, gain: 0, q: 1.5, active: true, dynamicEnabled: false, threshold: -12, ratio: 2, attack: 10, release: 100 },
+      { id: 'band-3', type: 'highshelf', frequency: 8000, gain: 0, q: 0.71, active: true, dynamicEnabled: false, threshold: -12, ratio: 2, attack: 10, release: 100 }
     ];
 
     // Stereo channel state
     this.channelState = [
-      { filters: this.createFilters(this.bands.length) },
-      { filters: this.createFilters(this.bands.length) }
+      { 
+        filters: this.createFilters(this.bands.length),
+        // ✅ NEW: Dynamic EQ state per band (envelope followers)
+        dynamicState: this.bands.map(() => ({ envelope: 0, gainReduction: 1.0 }))
+      },
+      { 
+        filters: this.createFilters(this.bands.length),
+        dynamicState: this.bands.map(() => ({ envelope: 0, gainReduction: 1.0 }))
+      }
     ];
 
     // Coefficient cache (dirty flag pattern)
@@ -51,10 +58,14 @@ class MultiBandEQProcessorV2 extends AudioWorkletProcessor {
             // Add filters
             for (let i = current; i < requiredFilters; i++) {
               this.channelState[ch].filters.push(this.createFilter());
+              // ✅ NEW: Add dynamic EQ state for new band
+              this.channelState[ch].dynamicState.push({ envelope: 0, gainReduction: 1.0 });
             }
           } else if (current > requiredFilters) {
             // Remove filters
             this.channelState[ch].filters.length = requiredFilters;
+            // ✅ NEW: Remove dynamic EQ state for removed band
+            this.channelState[ch].dynamicState.length = requiredFilters;
           }
         }
       } else if (e.data.type === 'bypass') {
@@ -222,6 +233,53 @@ class MultiBandEQProcessorV2 extends AudioWorkletProcessor {
     return y;
   }
 
+  /**
+   * ✅ NEW: Process Dynamic EQ (compression per band)
+   * Measures band output level and applies gain reduction when threshold is exceeded
+   */
+  processDynamicEQ(sample, bandIndex, channel, state) {
+    const band = this.bands[bandIndex];
+    const dynamicState = state.dynamicState[bandIndex];
+    
+    // Convert sample to dB
+    const absSample = Math.abs(sample);
+    const sampleDb = absSample > 0.0001 ? 20 * Math.log10(absSample) : -80;
+    
+    // Envelope follower (RMS-style, with attack/release)
+    const targetEnvelope = Math.abs(sample);
+    const currentEnvelope = dynamicState.envelope;
+    
+    // Attack/release coefficients
+    const attackTime = Math.max(0.001, band.attack / 1000); // ms to seconds
+    const releaseTime = Math.max(0.001, band.release / 1000);
+    const attackCoeff = Math.exp(-1 / (attackTime * this.sampleRate));
+    const releaseCoeff = Math.exp(-1 / (releaseTime * this.sampleRate));
+    
+    // Update envelope
+    if (targetEnvelope > currentEnvelope) {
+      dynamicState.envelope = targetEnvelope + (currentEnvelope - targetEnvelope) * attackCoeff;
+    } else {
+      dynamicState.envelope = targetEnvelope + (currentEnvelope - targetEnvelope) * releaseCoeff;
+    }
+    
+    // Convert envelope to dB
+    const envelopeDb = dynamicState.envelope > 0.0001 ? 20 * Math.log10(dynamicState.envelope) : -80;
+    
+    // Calculate gain reduction if threshold is exceeded
+    if (envelopeDb > band.threshold) {
+      const overThreshold = envelopeDb - band.threshold;
+      const gainReductionDb = overThreshold - (overThreshold / band.ratio);
+      const gainReductionLinear = Math.pow(10, gainReductionDb / 20);
+      dynamicState.gainReduction = gainReductionLinear;
+    } else {
+      // Release gain reduction smoothly
+      dynamicState.gainReduction = 1.0 + (dynamicState.gainReduction - 1.0) * releaseCoeff;
+    }
+    
+    // Apply gain reduction
+    return sample * dynamicState.gainReduction;
+  }
+
   process(inputs, outputs, parameters) {
     const input = inputs[0];
     const output = outputs[0];
@@ -258,6 +316,11 @@ class MultiBandEQProcessorV2 extends AudioWorkletProcessor {
         for (let b = 0; b < this.bands.length; b++) {
           if (this.bands[b].active) {
             processed = this.processBiquad(processed, state.filters[b]);
+            
+            // ✅ NEW: Apply Dynamic EQ if enabled
+            if (this.bands[b].dynamicEnabled) {
+              processed = this.processDynamicEQ(processed, b, channel, state);
+            }
           }
         }
 

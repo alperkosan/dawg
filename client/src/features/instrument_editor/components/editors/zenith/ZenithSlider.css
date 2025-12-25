@@ -1,0 +1,96 @@
+/**
+ * ZenithSlider Styles
+ */
+
+.zenith-slider {
+    width: 100%;
+    user-select: none;
+}
+
+.zenith-slider__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.zenith-slider__label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--zenith-text-secondary);
+}
+
+.zenith-slider__value {
+    font-size: 11px;
+    font-family: var(--zenith-font-mono);
+    color: var(--zenith-accent-cool);
+    text-shadow: 0 0 8px rgba(var(--zenith-accent-cool-rgb), 0.5);
+    padding: 2px 8px;
+    background: rgba(var(--zenith-accent-cool-rgb), 0.1);
+    border-radius: var(--zenith-radius-sm);
+    border: 1px solid rgba(var(--zenith-accent-cool-rgb), 0.2);
+}
+
+.zenith-slider__track {
+    position: relative;
+    height: 32px;
+    cursor: ew-resize;
+    display: flex;
+    align-items: center;
+    padding: 0 4px;
+}
+
+.zenith-slider__track--disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.zenith-slider__track-bg {
+    position: absolute;
+    left: 4px;
+    right: 4px;
+    height: 6px;
+    background: var(--zenith-overlay-light);
+    border-radius: 3px;
+    backdrop-filter: blur(10px);
+}
+
+.zenith-slider__fill {
+    position: absolute;
+    height: 6px;
+    border-radius: 3px;
+    transition: width 0.1s ease, left 0.1s ease;
+    pointer-events: none;
+}
+
+.zenith-slider__zero {
+    position: absolute;
+    width: 2px;
+    height: 12px;
+    background: rgba(255, 255, 255, 0.5);
+    transform: translateX(-1px);
+    pointer-events: none;
+}
+
+.zenith-slider__thumb {
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    background: linear-gradient(135deg, var(--zenith-bg-secondary) 0%, var(--zenith-bg-primary) 100%);
+    border: 2px solid var(--zenith-accent-cool);
+    border-radius: 50%;
+    transform: translateX(-50%);
+    transition: transform var(--zenith-duration-fast) var(--zenith-ease-out);
+    pointer-events: none;
+    backdrop-filter: blur(10px);
+}
+
+.zenith-slider__track:hover .zenith-slider__thumb {
+    transform: translateX(-50%) scale(1.2);
+}
+
+.zenith-slider__track:active .zenith-slider__thumb {
+    transform: translateX(-50%) scale(1.1);
+}

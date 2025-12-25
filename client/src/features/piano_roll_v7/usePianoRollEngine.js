@@ -1,6 +1,6 @@
 // src/features/piano_roll_v5/usePianoRollEngine.js
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import {usePlaybackStore} from '@/store/usePlaybackStore';
+import { usePlaybackStore } from '@/store/usePlaybackStore';
 import { uiUpdateManager, UPDATE_PRIORITIES, UPDATE_FREQUENCIES } from '@/lib/core/UIUpdateManager.js';
 import { getTimelineController } from '@/lib/core/TimelineControllerSingleton';
 
@@ -20,7 +20,7 @@ const SMOOTHNESS = 0.2; // Yumuşaklık faktörü
 
 export function usePianoRollEngine(containerRef, playbackControls = {}) {
     const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
-    const [snapValue, setSnapValue] = useState(1); // 1 = 1/16, 4 = 1/4 etc.
+    const [snapValue, setSnapValue] = useState(4); // default to 1/4 grid
 
     const viewportRef = useRef({
         scrollX: 0, scrollY: 0, zoomX: 1.0, zoomY: 1.0,
@@ -113,11 +113,13 @@ export function usePianoRollEngine(containerRef, playbackControls = {}) {
     }, []);
 
     const handleWheel = useCallback((e) => {
-        e.preventDefault();
-        const { deltaX, deltaY, ctrlKey, offsetX, offsetY } = e;
-        const vp = viewportRef.current;
+        // ✅ UX FIX 1 & 5: Ctrl + wheel (zoom) has priority over Alt
+        // This allows Ctrl + Alt + wheel to work for zoom
+        if (e.ctrlKey || e.metaKey) {
+            e.preventDefault();
+            const { deltaY, offsetX, offsetY } = e;
+            const vp = viewportRef.current;
 
-        if (ctrlKey) {
             const zoomFactor = 1 - deltaY * 0.005;
             const newZoomX = Math.max(MIN_ZOOM_X, Math.min(MAX_ZOOM_X, vp.zoomX * zoomFactor));
             const newZoomY = Math.max(MIN_ZOOM_Y, Math.min(MAX_ZOOM_Y, vp.zoomY * zoomFactor));
@@ -139,7 +141,7 @@ export function usePianoRollEngine(containerRef, playbackControls = {}) {
             // newScrollX = (scrollX + mouseX) * (newZoomX / oldZoomX) - mouseX
             const worldX = (vp.scrollX + mouseX) / vp.zoomX;
             const worldY = (vp.scrollY + mouseY) / vp.zoomY;
-            
+
             // Keep the same world point under the mouse (convert back to screen coordinates)
             const newScrollX = (worldX * newZoomX) - mouseX;
             const newScrollY = (worldY * newZoomY) - mouseY;
@@ -156,7 +158,23 @@ export function usePianoRollEngine(containerRef, playbackControls = {}) {
 
             // Immediate render trigger for zoom changes
             setRenderTrigger(Date.now());
-        } else {
+            return;
+        }
+
+        // ✅ UX FIX: Don't scroll when Alt is pressed (used for velocity adjustment)
+        // But only if Ctrl is not pressed (Ctrl has priority)
+        if (e.altKey && !e.ctrlKey && !e.metaKey) {
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+        }
+
+        e.preventDefault();
+        const { deltaX, deltaY } = e;
+        const vp = viewportRef.current;
+
+        // Normal scroll (no modifiers)
+        {
             // ✅ FIX: scrollX is stored in screen coordinates for scroll operations
             // deltaX is screen pixels, so we can add directly
             // Renderer will convert to world coordinates when needed via translate
@@ -282,7 +300,7 @@ export function usePianoRollEngine(containerRef, playbackControls = {}) {
     }, [containerRef, handleWheel]);
 
     const viewportData = viewportRef.current;
-    
+
     const dimensions = useMemo(() => {
         const stepWidth = BASE_STEP_WIDTH * viewportData.zoomX;
         const keyHeight = BASE_KEY_HEIGHT * viewportData.zoomY;
@@ -294,14 +312,15 @@ export function usePianoRollEngine(containerRef, playbackControls = {}) {
             totalHeight: TOTAL_KEYS * keyHeight,
         };
     }, [viewportData.zoomX, viewportData.zoomY]);
-    
+
     const lod = useMemo(() => {
         const stepWidth = BASE_STEP_WIDTH * viewportData.zoomX;
-        if (stepWidth < 0.2) return 4;
-        if (stepWidth < 0.8) return 3;
-        if (stepWidth < 2.5) return 2;
-        if (stepWidth < 10) return 1;
-        return 0;
+        // Adjusted thresholds for earlier optimization
+        if (stepWidth < 2) return 4;   // Ultra zoomed out
+        if (stepWidth < 5) return 3;   // Very zoomed out
+        if (stepWidth < 15) return 2;  // Zoomed out (Flat colors)
+        if (stepWidth < 30) return 1;  // Normal/Slightly zoomed out (No shadows)
+        return 0; // High detail
     }, [viewportData.zoomX]);
 
     const visibleSteps = useMemo(() => {
@@ -327,6 +346,66 @@ export function usePianoRollEngine(containerRef, playbackControls = {}) {
             endKey: Math.min(dimensions.totalKeys - 1, end),
         };
     }, [viewportData.scrollY, viewportSize.height, dimensions.keyHeight, dimensions.totalKeys]);
+
+    // --- Touch handling for 2-finger zoom/pan ---
+    const lastTouchRef = useRef({ dist: 0, x: 0, y: 0 });
+
+    const handleTouchStart = useCallback((e) => {
+        if (e.touches.length === 2) {
+            e.preventDefault();
+            const t1 = e.touches[0];
+            const t2 = e.touches[1];
+            const dist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+            const cx = (t1.clientX + t2.clientX) / 2;
+            const cy = (t1.clientY + t2.clientY) / 2;
+            lastTouchRef.current = { dist, x: cx, y: cy };
+        }
+    }, []);
+
+    const handleTouchMove = useCallback((e) => {
+        // Prevent default scrolling for all touch events in canvas
+        if (e.cancelable) e.preventDefault();
+
+        if (e.touches.length === 2) {
+            const vp = viewportRef.current;
+            const t1 = e.touches[0];
+            const t2 = e.touches[1];
+
+            const dist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+            const cx = (t1.clientX + t2.clientX) / 2;
+            const cy = (t1.clientY + t2.clientY) / 2;
+
+            // Pan
+            const dx = cx - lastTouchRef.current.x;
+            const dy = cy - lastTouchRef.current.y;
+
+            // Apply pan
+            vp.targetScrollX -= dx;
+            vp.targetScrollY -= dy;
+
+            // Zoom
+            if (lastTouchRef.current.dist > 0) {
+                const scale = dist / lastTouchRef.current.dist;
+
+                // Limit zoom speed
+                const smoothedScale = 1 + (scale - 1) * 0.8;
+
+                const newZoomX = Math.max(MIN_ZOOM_X, Math.min(MAX_ZOOM_X, vp.targetZoomX * smoothedScale));
+                const newZoomY = Math.max(MIN_ZOOM_Y, Math.min(MAX_ZOOM_Y, vp.targetZoomY * smoothedScale));
+
+                // TODO: Center zoom on touch midpoint (complex math, simplified here)
+                vp.targetZoomX = newZoomX;
+                vp.targetZoomY = newZoomY;
+            }
+
+            lastTouchRef.current = { dist, x: cx, y: cy };
+            setRenderTrigger(Date.now());
+        }
+    }, []);
+
+    const handleTouchEnd = useCallback((e) => {
+        // Cleanup if needed
+    }, []);
 
     // ✅ PHASE 1: Follow Playhead Mode - Programmatic viewport control
     const updateViewport = useCallback(({ scrollX, scrollY, smooth = true }) => {
@@ -356,9 +435,22 @@ export function usePianoRollEngine(containerRef, playbackControls = {}) {
                 vp.targetScrollY = clampedScrollY;
             }
         }
-
-        setRenderTrigger(Date.now());
     }, [dimensions, viewportSize]);
+
+    // Attach non-passive listeners for touch
+    useEffect(() => {
+        const container = containerRef.current;
+        if (container) {
+            container.addEventListener('touchstart', handleTouchStart, { passive: false });
+            container.addEventListener('touchmove', handleTouchMove, { passive: false });
+            container.addEventListener('touchend', handleTouchEnd);
+            return () => {
+                container.removeEventListener('touchstart', handleTouchStart);
+                container.removeEventListener('touchmove', handleTouchMove);
+                container.removeEventListener('touchend', handleTouchEnd);
+            };
+        }
+    }, [containerRef, handleTouchStart, handleTouchMove, handleTouchEnd]);
 
     return {
         viewport: { ...viewportData, width: viewportSize.width, height: viewportSize.height, visibleSteps, visibleKeys },
@@ -371,6 +463,9 @@ export function usePianoRollEngine(containerRef, playbackControls = {}) {
             onMouseMove: handleMouseMove,
             onMouseUp: handleMouseUp,
             onMouseLeave: handleMouseUp,
+            // Touch events are attached via ref/effect, but we can expose them if needed 
+            // via React props if we prefer that over addEventListener
+            // But addEventListener { passive: false } is required for e.preventDefault()
             updateViewport
         }
     };

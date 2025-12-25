@@ -7,7 +7,7 @@
   },
   "buildCommand": "cd client && npm install && npm run build",
   "outputDirectory": "client/dist",
-  "installCommand": "npm install",
+  "installCommand": "npm install && cd server && npm install && cd ..",
   "framework": null,
   "rewrites": [
     {

@@ -184,7 +184,11 @@ const SortableEffectItem = ({ effect, track, index, moveEffect, expandedEffect, 
       </div>
 
       {/* Wet/Dry Slider */}
-      <div className="effects-rack__mix-control">
+      <div
+        className="effects-rack__mix-control"
+        onMouseDown={(e) => e.stopPropagation()}
+        onTouchStart={(e) => e.stopPropagation()}
+      >
         <label>Mix</label>
         <div className="effects-rack__mix-slider-container">
           <input

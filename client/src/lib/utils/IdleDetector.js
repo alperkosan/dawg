@@ -54,7 +54,8 @@ export class IdleDetector {
   start() {
     // Listen for user activity
     this.activityEvents.forEach(event => {
-      window.addEventListener(event, this._boundActivityHandler, { passive: true });
+      // ✅ USE CAPTURE PHASE: Ensure we see events even if ShortcutManager calls e.stopPropagation()
+      window.addEventListener(event, this._boundActivityHandler, { passive: true, capture: true });
     });
 
     // Check idle state every second
@@ -69,7 +70,7 @@ export class IdleDetector {
   stop() {
     // Remove event listeners
     this.activityEvents.forEach(event => {
-      window.removeEventListener(event, this._boundActivityHandler);
+      window.removeEventListener(event, this._boundActivityHandler, { capture: true });
     });
 
     // Clear interval

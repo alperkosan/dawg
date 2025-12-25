@@ -92,16 +92,22 @@ export function TimelineRuler({
 
     // Draw loop regions
     loopRegions.forEach(region => {
+      // ✅ FIX: Calculate positions with zoom correctly
       const startX = region.startTime * pixelsPerBeat - viewport.scrollX;
       const endX = region.endTime * pixelsPerBeat - viewport.scrollX;
-      const width = endX - startX;
       const isHovered = hoveredRegion?.regionId === region.id;
 
+      // ✅ FIX: Only draw if region is visible in viewport
       if (endX >= 0 && startX <= rect.width) {
+        // ✅ FIX: Calculate visible width correctly (clip to viewport bounds)
+        const visibleStartX = Math.max(0, startX);
+        const visibleEndX = Math.min(rect.width, endX);
+        const visibleWidth = visibleEndX - visibleStartX;
+        
         // Background
         const bgOpacity = isHovered ? 0.25 : 0.15;
         ctx.fillStyle = region.color ? `${region.color}${Math.floor(bgOpacity * 255).toString(16).padStart(2, '0')}` : `rgba(34, 197, 94, ${bgOpacity})`;
-        ctx.fillRect(Math.max(0, startX), 0, width, height);
+        ctx.fillRect(visibleStartX, 0, visibleWidth, height);
 
         // Borders
         ctx.strokeStyle = region.color || '#22c55e';

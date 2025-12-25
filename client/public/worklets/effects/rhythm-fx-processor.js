@@ -23,7 +23,9 @@ class RhythmFXProcessor extends AudioWorkletProcessor {
       { name: 'glitchAmount', defaultValue: 50, minValue: 0, maxValue: 100 },
       { name: 'tapeSpeed', defaultValue: 100, minValue: -200, maxValue: 200 },
       { name: 'mode', defaultValue: 0, minValue: 0, maxValue: 5 }, // 0-5: effect modes
-      { name: 'bpm', defaultValue: 128, minValue: 60, maxValue: 200 }
+      { name: 'bpm', defaultValue: 128, minValue: 60, maxValue: 200 },
+      { name: 'tempoSync', defaultValue: 0, minValue: 0, maxValue: 1 }, // 0=off, 1=on
+      { name: 'noteDivision', defaultValue: 0.25, minValue: 0.01, maxValue: 4 } // e.g., 0.25 for 1/16, 1 for 1/4
     ];
   }
 
@@ -65,6 +67,16 @@ class RhythmFXProcessor extends AudioWorkletProcessor {
       repeatIndex: 0
     };
 
+    // Step-based buffer capture (for reverse, stutter, repeat)
+    this.stepBuffer = {
+      left: new Float32Array(0),
+      right: new Float32Array(0),
+      length: 0,
+      readIndex: 0,
+      isActive: false,
+      mode: -1
+    };
+
     // Gate envelope
     this.gateEnvelope = 1.0;
 
@@ -87,6 +99,12 @@ class RhythmFXProcessor extends AudioWorkletProcessor {
         case 'updateSettings':
           Object.assign(this.settings, data);
           break;
+        case 'parameters':
+          // Handle batched parameter updates from ParameterBatcher
+          if (e.data.parameters) {
+            Object.assign(this.settings, e.data.parameters);
+          }
+          break;
         case 'bypass':
           this.bypassed = data.value;
           break;
@@ -96,9 +114,14 @@ class RhythmFXProcessor extends AudioWorkletProcessor {
     };
   }
 
-  getParam(param, index) {
-    if (!param) return undefined;
-    return param.length > 1 ? param[index] : param[0];
+  getParam(param, index, paramName = null) {
+    if (param && param.length > 0) {
+      return param.length > 1 ? param[index] : param[0];
+    }
+    if (paramName && this.settings && this.settings[paramName] !== undefined) {
+      return this.settings[paramName];
+    }
+    return undefined;
   }
 
   // Euclidean rhythm generator (Bjorklund's algorithm)
@@ -133,11 +156,26 @@ class RhythmFXProcessor extends AudioWorkletProcessor {
   }
 
   // Calculate samples per step based on BPM and division
-  calculateStepLength(bpm, division) {
-    const beatsPerSecond = bpm / 60;
-    const stepsPerBeat = division / 4; // Assuming 4/4 time
-    const stepsPerSecond = beatsPerSecond * stepsPerBeat;
-    return Math.floor(this.sampleRate / stepsPerSecond);
+  // ✅ FIX: Align with transport system's step timing (16th note = 1 step)
+  calculateStepLength(bpm, division, tempoSync, noteDivision) {
+    if (tempoSync > 0.5) {
+      // Tempo sync mode: use note division
+      const beatDuration = 60 / bpm; // Duration of one beat in seconds
+      const noteDuration = beatDuration * noteDivision; // Duration of the selected note division
+      return Math.floor(this.sampleRate * noteDuration);
+    } else {
+      // Manual division mode
+      // ✅ FIX: Align with transport system (16th note = 1 step, 4 steps per beat)
+      // Transport system uses: stepsPerBar = 16, stepsPerBeat = 4
+      // Division parameter: 16 = 1 step, 8 = 2 steps, 4 = 4 steps, etc.
+      const beatsPerSecond = bpm / 60;
+      const stepsPerBeat = 4; // ✅ FIX: Always 4 steps per beat (16th note resolution)
+      const stepsPerSecond = beatsPerSecond * stepsPerBeat;
+      // Division is used to subdivide steps: division=16 means 1 step, division=8 means 2 steps, etc.
+      const stepSubdivision = 16 / division; // How many RhythmFX steps per transport step
+      const rhythmFXStepsPerSecond = stepsPerSecond * stepSubdivision;
+      return Math.floor(this.sampleRate / rhythmFXStepsPerSecond);
+    }
   }
 
   // Apply swing/groove
@@ -193,14 +231,65 @@ class RhythmFXProcessor extends AudioWorkletProcessor {
     return { left: outL, right: outR };
   }
 
-  // Reverse effect
-  processReverse(bufferSizeMs) {
+  // Capture buffer for current step (for reverse, stutter, repeat)
+  captureStepBuffer(bufferSizeMs) {
     const bufferSizeSamples = Math.floor((bufferSizeMs / 1000) * this.sampleRate);
-    const readIdx = (this.circularBuffer.writeIndex - bufferSizeSamples + this.circularBuffer.size) % this.circularBuffer.size;
+    const maxSamples = Math.min(bufferSizeSamples, this.circularBuffer.size);
+    
+    // Resize buffer if needed
+    if (this.stepBuffer.left.length < maxSamples) {
+      this.stepBuffer.left = new Float32Array(maxSamples);
+      this.stepBuffer.right = new Float32Array(maxSamples);
+    }
+    
+    this.stepBuffer.length = maxSamples;
+    
+    // Capture buffer from circular buffer (most recent samples)
+    for (let i = 0; i < maxSamples; i++) {
+      const readIdx = (this.circularBuffer.writeIndex - maxSamples + i + this.circularBuffer.size) % this.circularBuffer.size;
+      this.stepBuffer.left[i] = this.circularBuffer.left[readIdx];
+      this.stepBuffer.right[i] = this.circularBuffer.right[readIdx];
+    }
+    
+    this.stepBuffer.readIndex = 0;
+    this.stepBuffer.isActive = true;
+  }
 
-    const outL = this.circularBuffer.left[readIdx];
-    const outR = this.circularBuffer.right[readIdx];
-
+  // Reverse effect - read from captured buffer in reverse order
+  processReverse() {
+    if (!this.stepBuffer.isActive || this.stepBuffer.length === 0) {
+      return { left: 0, right: 0 };
+    }
+    
+    // Read from buffer in reverse order
+    // readIndex starts at 0, so we read from end backwards
+    const reverseIndex = this.stepBuffer.length - 1 - this.stepBuffer.readIndex;
+    const outL = this.stepBuffer.left[reverseIndex];
+    const outR = this.stepBuffer.right[reverseIndex];
+    
+    // Advance read index
+    this.stepBuffer.readIndex++;
+    
+    // If we've read the entire buffer, loop back to start (for longer steps)
+    if (this.stepBuffer.readIndex >= this.stepBuffer.length) {
+      this.stepBuffer.readIndex = 0;
+    }
+    
+    return { left: outL, right: outR };
+  }
+  
+  // Stutter/Repeat effect - read from captured buffer in forward order
+  processStutterFromBuffer() {
+    if (!this.stepBuffer.isActive || this.stepBuffer.length === 0) {
+      return { left: 0, right: 0 };
+    }
+    
+    const outL = this.stepBuffer.left[this.stepBuffer.readIndex];
+    const outR = this.stepBuffer.right[this.stepBuffer.readIndex];
+    
+    // Advance read index (wraps around for looping)
+    this.stepBuffer.readIndex = (this.stepBuffer.readIndex + 1) % this.stepBuffer.length;
+    
     return { left: outL, right: outR };
   }
 
@@ -220,16 +309,20 @@ class RhythmFXProcessor extends AudioWorkletProcessor {
     const inputLeft = input[0];
     const inputRight = input[1] || input[0];
 
-    const bpm = this.getParam(parameters.bpm, 0) ?? 128;
-    const division = this.getParam(parameters.division, 0) ?? 16;
-    const chance = this.getParam(parameters.chance, 0) ?? 100;
-    const intensity = this.getParam(parameters.intensity, 0) ?? 100;
-    const swing = this.getParam(parameters.swing, 0) ?? 50;
-    const bufferSize = this.getParam(parameters.bufferSize, 0) ?? 500;
-    const fadeTime = this.getParam(parameters.fadeTime, 0) ?? 10;
-    const mode = Math.floor(this.getParam(parameters.mode, 0) || 0);
+    const bpm = this.getParam(parameters.bpm, 0, 'bpm') ?? 128;
+    const division = this.getParam(parameters.division, 0, 'division') ?? 16;
+    const chance = this.getParam(parameters.chance, 0, 'chance') ?? 100;
+    const intensity = this.getParam(parameters.intensity, 0, 'intensity') ?? 100;
+    const swing = this.getParam(parameters.swing, 0, 'swing') ?? 50;
+    const bufferSize = this.getParam(parameters.bufferSize, 0, 'bufferSize') ?? 500;
+    const fadeTime = this.getParam(parameters.fadeTime, 0, 'fadeTime') ?? 10;
+    const glitchAmount = this.getParam(parameters.glitchAmount, 0, 'glitchAmount') ?? 50;
+    const tapeSpeed = this.getParam(parameters.tapeSpeed, 0, 'tapeSpeed') ?? 100;
+    const mode = Math.floor(this.getParam(parameters.mode, 0, 'mode') || 0);
+    const tempoSync = this.getParam(parameters.tempoSync, 0, 'tempoSync') ?? 0;
+    const noteDivision = this.getParam(parameters.noteDivision, 0, 'noteDivision') ?? 0.25;
 
-    this.samplesPerStep = this.calculateStepLength(bpm, division);
+    this.samplesPerStep = this.calculateStepLength(bpm, division, tempoSync, noteDivision);
     const intensityAmount = intensity / 100;
 
     const blockSize = inputLeft.length;
@@ -242,16 +335,30 @@ class RhythmFXProcessor extends AudioWorkletProcessor {
       this.circularBuffer.right[this.circularBuffer.writeIndex] = inputRight[i];
       this.circularBuffer.writeIndex = (this.circularBuffer.writeIndex + 1) % this.circularBuffer.size;
 
+      // Check if current step is active (before step progression)
+      const stepActive = this.pattern[this.currentStep] > 0;
+      
       // Step progression
+      const wasNewStep = this.stepProgress === 0;
       this.stepProgress++;
       if (this.stepProgress >= this.samplesPerStep) {
         this.stepProgress = 0;
         this.currentStep = (this.currentStep + 1) % this.pattern.length;
         this.stutterState.repeating = false; // Reset stutter on new step
+        this.stepBuffer.isActive = false; // Reset step buffer on new step
+        this.stepBuffer.readIndex = 0; // Reset read index
+      }
+      
+      // Capture buffer at the START of an active step
+      // We capture immediately when step becomes active to get the most recent audio
+      if (wasNewStep && stepActive && (mode === 1 || mode === 2 || mode === 3)) {
+        const captureSize = mode === 2 ? bufferSize * 2 : bufferSize;
+        // Capture buffer immediately - circular buffer already has enough data
+        // because we write to it before processing
+        this.captureStepBuffer(captureSize);
+        this.stepBuffer.mode = mode;
       }
 
-      // Check if current step is active
-      const stepActive = this.pattern[this.currentStep] > 0;
       const randomChance = Math.random() * 100 < chance;
       const shouldProcess = stepActive && randomChance;
 
@@ -265,26 +372,50 @@ class RhythmFXProcessor extends AudioWorkletProcessor {
             processedR = this.processGate(inputRight[i], true, fadeTime);
             break;
 
-          case 1: // STUTTER
-            const stutter = this.processStutter(inputLeft[i], inputRight[i], bufferSize);
-            processedL = stutter.left;
-            processedR = stutter.right;
+          case 1: // STUTTER - use captured buffer
+            if (this.stepBuffer.isActive && this.stepBuffer.mode === 1) {
+              const stutter = this.processStutterFromBuffer();
+              processedL = stutter.left;
+              processedR = stutter.right;
+            } else {
+              // Fallback to old method if buffer not ready
+              const stutter = this.processStutter(inputLeft[i], inputRight[i], bufferSize);
+              processedL = stutter.left;
+              processedR = stutter.right;
+            }
             break;
 
-          case 2: // REPEAT (similar to stutter but longer)
-            const repeat = this.processStutter(inputLeft[i], inputRight[i], bufferSize * 2);
-            processedL = repeat.left;
-            processedR = repeat.right;
+          case 2: // REPEAT - use captured buffer (longer)
+            if (this.stepBuffer.isActive && this.stepBuffer.mode === 2) {
+              const repeat = this.processStutterFromBuffer();
+              processedL = repeat.left;
+              processedR = repeat.right;
+            } else {
+              // Fallback to old method if buffer not ready
+              const repeat = this.processStutter(inputLeft[i], inputRight[i], bufferSize * 2);
+              processedL = repeat.left;
+              processedR = repeat.right;
+            }
             break;
 
-          case 3: // REVERSE
-            const reverse = this.processReverse(bufferSize);
-            processedL = reverse.left;
-            processedR = reverse.right;
+          case 3: // REVERSE - use captured buffer in reverse order
+            if (this.stepBuffer.isActive && this.stepBuffer.mode === 3) {
+              const reverse = this.processReverse();
+              processedL = reverse.left;
+              processedR = reverse.right;
+            } else {
+              // Fallback: read from circular buffer backwards
+              const bufferSizeSamples = Math.floor((bufferSize / 1000) * this.sampleRate);
+              const readIdx = (this.circularBuffer.writeIndex - bufferSizeSamples + this.circularBuffer.size) % this.circularBuffer.size;
+              processedL = this.circularBuffer.left[readIdx];
+              processedR = this.circularBuffer.right[readIdx];
+            }
             break;
 
           case 4: // GLITCH (random slice)
-            if (Math.random() < 0.3) {
+            // Use glitchAmount as probability (0-100% -> 0.0-1.0)
+            const glitchProbability = glitchAmount / 100;
+            if (Math.random() < glitchProbability) {
               const randomOffset = Math.floor(Math.random() * bufferSize * this.sampleRate / 1000);
               const readIdx = (this.circularBuffer.writeIndex - randomOffset + this.circularBuffer.size) % this.circularBuffer.size;
               processedL = this.circularBuffer.left[readIdx];
@@ -292,9 +423,14 @@ class RhythmFXProcessor extends AudioWorkletProcessor {
             }
             break;
 
-          case 5: // TAPE STOP (not implemented in real-time, placeholder)
-            processedL = inputLeft[i] * (this.stepProgress / this.samplesPerStep);
-            processedR = inputRight[i] * (this.stepProgress / this.samplesPerStep);
+          case 5: // TAPE STOP (speed-based fade)
+            // Use tapeSpeed to control playback rate (100% = normal, 0% = stopped)
+            const speedRatio = tapeSpeed / 100;
+            const progressRatio = this.stepProgress / this.samplesPerStep;
+            // Apply speed-based fade: faster speed = less fade, slower speed = more fade
+            const fadeAmount = 1 - (progressRatio * (1 - speedRatio));
+            processedL = inputLeft[i] * fadeAmount;
+            processedR = inputRight[i] * fadeAmount;
             break;
 
           default:

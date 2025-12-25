@@ -6,14 +6,16 @@
  */
 
 import { AudioContextService } from '../services/AudioContextService';
+import { AudioEngineGlobal } from '../core/AudioEngineGlobal';
 import { AudioProcessor } from './AudioProcessor';
 import { FileManager } from './FileManager';
-import { RenderEngine } from './RenderEngine';
+import { getRenderEngine } from './RenderEngine'; // ✅ SYNC: Use singleton RenderEngine
 import { audioAssetManager } from './AudioAssetManager';
 import { normalizeEffectSettings } from './effects/parameterMappings.js';
 import {
   EXPORT_FORMATS,
   EXPORT_TYPES,
+  EXPORT_MODE,
   QUALITY_PRESETS,
   getCurrentBPM,
   secondsToBeats,
@@ -23,7 +25,7 @@ import {
 } from './audioRenderConfig';
 
 // Re-export for external use
-export { EXPORT_FORMATS, EXPORT_TYPES, QUALITY_PRESETS };
+export { EXPORT_FORMATS, EXPORT_TYPES, EXPORT_MODE, QUALITY_PRESETS };
 
 // FL Studio-style quick export presets
 export const FL_PRESETS = {
@@ -58,7 +60,8 @@ export class AudioExportManager {
   constructor() {
     this.audioProcessor = new AudioProcessor();
     this.fileManager = new FileManager();
-    this.renderEngine = new RenderEngine();
+    // ✅ SYNC: Use singleton RenderEngine for consistency across all export systems
+    this.renderEngine = getRenderEngine();
 
     this.isExporting = false;
     this.exportQueue = [];
@@ -443,7 +446,7 @@ export class AudioExportManager {
       ...settings,
       // Freeze-specific optimizations
       includeEffects: true,
-      normalize: false, // Preserve dynamics for further processing
+      normalize: true,  // ✅ FIX: Enable normalization to prevent excessive gain
       fadeOut: false   // No fade for frozen patterns
     });
   }
@@ -760,7 +763,7 @@ export class AudioExportManager {
     const mixerTrackMap = {};
     const requiredBusIds = new Set();
 
-    const audioEngine = AudioContextService.getAudioEngine();
+    const audioEngine = AudioEngineGlobal.get();
     if (!audioEngine) {
       throw new Error('Audio engine not available');
     }
@@ -769,8 +772,85 @@ export class AudioExportManager {
       const inst = instruments.find(i => i.id === instrumentId);
       if (!inst) return;
 
-      instrumentMap[instrumentId] = inst;
+      // ✅ FIX: Capture live instrument state from audio engine
+      const liveInstrument = audioEngine.instruments?.get(instrumentId);
+      const liveState = {};
 
+      if (liveInstrument) {
+        console.log(`🎹 Capturing live state for instrument: ${instrumentId} (${inst.type})`);
+
+        // For VASynth/Zenith: capture current settings and preset
+        if (inst.type === 'vasynth' || inst.type === 'zenith') {
+          // ✅ FIX: Use getPreset() instead of getSettings() for synths
+          if (typeof liveInstrument.getPreset === 'function') {
+            liveState.preset = liveInstrument.getPreset();
+            console.log(`  ✅ Captured live preset from getPreset():`, Object.keys(liveState.preset || {}));
+          } else if (liveInstrument.preset) {
+            // Fallback: use stored preset
+            liveState.preset = liveInstrument.preset;
+            console.log(`  ✅ Captured stored preset:`, liveInstrument.preset.name || 'Custom');
+          }
+
+          // ✅ FIX: Explicitly capture masterVolume (critical for gain staging)
+          if (liveInstrument.masterVolume !== undefined) {
+            if (!liveState.preset) liveState.preset = {};
+            liveState.preset.masterVolume = liveInstrument.masterVolume;
+            console.log(`  ✅ Captured masterVolume: ${liveInstrument.masterVolume}`);
+          } else if (liveInstrument.masterGain?.gain?.value !== undefined) {
+            // Fallback: read from masterGain node
+            if (!liveState.preset) liveState.preset = {};
+            liveState.preset.masterVolume = liveInstrument.masterGain.gain.value;
+            console.log(`  ✅ Captured masterVolume from masterGain: ${liveInstrument.masterGain.gain.value}`);
+          }
+
+          // Capture preset name for fallback
+          if (liveInstrument.presetName) {
+            liveState.presetName = liveInstrument.presetName;
+          }
+        }
+
+        // For samplers: capture playback settings
+        if (inst.type === 'sample' || inst.type === 'sampler') {
+          if (liveInstrument.sampleStart !== undefined) {
+            liveState.sampleStart = liveInstrument.sampleStart;
+          }
+          if (liveInstrument.sampleEnd !== undefined) {
+            liveState.sampleEnd = liveInstrument.sampleEnd;
+          }
+          if (liveInstrument.reverse !== undefined) {
+            liveState.reverse = liveInstrument.reverse;
+          }
+          if (liveInstrument.pitch !== undefined) {
+            liveState.pitch = liveInstrument.pitch;
+          }
+          if (liveInstrument.playbackRate !== undefined) {
+            liveState.playbackRate = liveInstrument.playbackRate;
+          }
+          console.log(`  ✅ Captured sampler settings:`, {
+            sampleStart: liveState.sampleStart,
+            sampleEnd: liveState.sampleEnd,
+            reverse: liveState.reverse,
+            pitch: liveState.pitch
+          });
+        }
+      }
+
+      // ✅ FIX: Capture mute state from instrument store (check all variants)
+      if (inst.isMuted !== undefined) {
+        liveState.muted = inst.isMuted;  // Store uses 'isMuted', export uses 'muted'
+      } else if (inst.muted !== undefined) {
+        liveState.muted = inst.muted;
+      } else if (inst.mute !== undefined) {
+        liveState.muted = inst.mute;
+      }
+
+      // Merge live state with static metadata (live state takes priority)
+      instrumentMap[instrumentId] = {
+        ...inst,
+        ...liveState
+      };
+
+      // Serialize mixer track for this instrument
       const mixerTrackId = inst.mixerTrackId;
       if (
         mixerTrackId &&
@@ -793,23 +873,82 @@ export class AudioExportManager {
     if (includeMasterChannel) {
       const masterInsert = audioEngine.mixerInserts?.get('master');
       if (masterInsert) {
-          mixerTrackMap['master'] = this._serializeInsert(masterInsert, 'master', {
-            trackMeta: mixerTrackMetaMap.get('master'),
-            forceType: 'master'
-          });
+        mixerTrackMap['master'] = this._serializeInsert(masterInsert, 'master', {
+          trackMeta: mixerTrackMetaMap.get('master'),
+          forceType: 'master'
+        });
       }
     }
 
-    // Ensure bus inserts referenced by sends are included
+    // ✅ FIX: Ensure bus inserts referenced by sends are included
+    // Bus channel'ların efektleri de dahil edilmeli
     for (const busId of requiredBusIds) {
-      if (mixerTrackMap[busId]) continue;
+      if (mixerTrackMap[busId]) {
+        // Bus channel zaten eklenmiş, efektlerinin doğru şekilde serialize edildiğinden emin ol
+        console.log(`🔍 [BUS] Bus channel ${busId} already in mixerTrackMap, checking effects...`);
+        const existingBus = mixerTrackMap[busId];
+        console.log(`🔍 [BUS] Existing bus data:`, {
+          busId,
+          hasInsertEffects: !!existingBus.insertEffects,
+          insertEffectsCount: existingBus.insertEffects?.length || 0,
+          insertEffects: existingBus.insertEffects
+        });
+
+        if (!existingBus.insertEffects || existingBus.insertEffects.length === 0) {
+          // Bus channel'ın efektleri eksik, yeniden serialize et
+          const busInsert = audioEngine.mixerInserts?.get(busId);
+          if (busInsert) {
+            const trackMeta = mixerTrackMetaMap.get(busId);
+            console.log(`🔄 [BUS] Re-serializing bus channel ${busId} to include effects...`);
+            console.log(`🔍 [BUS] Bus insert data:`, {
+              hasEffectsMap: !!busInsert.effects,
+              effectsSize: busInsert.effects?.size || 0,
+              effectsEntries: busInsert.effects ? Array.from(busInsert.effects.entries()).map(([id, e]) => ({
+                id,
+                type: e.type,
+                bypass: e.bypass
+              })) : [],
+              trackMeta: trackMeta ? {
+                id: trackMeta.id,
+                name: trackMeta.name,
+                hasEffects: !!trackMeta.insertEffects,
+                effectsCount: trackMeta.insertEffects?.length || 0
+              } : null
+            });
+
+            mixerTrackMap[busId] = this._serializeInsert(busInsert, busId, {
+              trackMeta,
+              forceType: trackMeta?.type || (busId?.startsWith('bus-') ? 'bus' : undefined)
+            });
+            console.log(`✅ [BUS] Bus channel ${busId} re-serialized with ${mixerTrackMap[busId].insertEffects?.length || 0} effects`);
+          } else {
+            console.warn(`⚠️ [BUS] Bus insert ${busId} not found in audio engine for re-serialization`);
+          }
+        }
+        continue;
+      }
+
       const busInsert = audioEngine.mixerInserts?.get(busId);
-      if (!busInsert) continue;
+      if (!busInsert) {
+        console.warn(`⚠️ [BUS] Bus insert ${busId} not found in audio engine`);
+        continue;
+      }
+
       const trackMeta = mixerTrackMetaMap.get(busId);
-      mixerTrackMap[busId] = this._serializeInsert(busInsert, busId, {
+      console.log(`🔍 [BUS] Serializing new bus channel ${busId}:`, {
+        hasInsert: !!busInsert,
+        hasEffectsMap: !!busInsert.effects,
+        effectsSize: busInsert.effects?.size || 0,
+        hasTrackMeta: !!trackMeta,
+        trackMetaEffects: trackMeta?.insertEffects?.length || 0
+      });
+
+      const serializedBus = this._serializeInsert(busInsert, busId, {
         trackMeta,
         forceType: trackMeta?.type || (busId?.startsWith('bus-') ? 'bus' : undefined)
       });
+      mixerTrackMap[busId] = serializedBus;
+      console.log(`✅ [BUS] Added bus channel ${busId} with ${serializedBus.insertEffects?.length || 0} effects`);
     }
 
     snapshot.instruments = instrumentMap;
@@ -822,24 +961,61 @@ export class AudioExportManager {
   }
 
   _serializeInsert(insert, mixerTrackId, { trackMeta = null, forceType, sends: overrideSends } = {}) {
+    // ✅ DEBUG: Log effect serialization for bus channels
+    const isBusChannel = mixerTrackId?.startsWith('bus-');
+    const effectsMap = insert.effects;
+    const effectsSize = effectsMap?.size || 0;
+
+    if (isBusChannel) {
+      console.log(`🔍 [SERIALIZE] Bus channel ${mixerTrackId}:`, {
+        hasEffectsMap: !!effectsMap,
+        effectsSize,
+        effectsEntries: effectsMap ? Array.from(effectsMap.entries()).map(([id, e]) => ({
+          id,
+          type: e.type,
+          bypass: e.bypass
+        })) : [],
+        insertType: insert.constructor?.name,
+        insertKeys: Object.keys(insert || {})
+      });
+    }
+
+    const insertEffects = effectsMap && effectsSize > 0
+      ? Array.from(effectsMap.entries()).map(([effectId, effect]) => {
+        const serialized = {
+          id: effectId,
+          type: effect.type,
+          bypass: effect.bypass || false,
+          settings: normalizeEffectSettings(effect.type, effect.settings || {})
+        };
+
+        if (isBusChannel) {
+          console.log(`  ✅ Serialized bus effect: ${effectId} (${effect.type})`);
+        }
+
+        return serialized;
+      })
+      : [];
+
+    if (isBusChannel && insertEffects.length === 0) {
+      console.warn(`⚠️ [SERIALIZE] Bus channel ${mixerTrackId} has NO effects!`, {
+        hasEffectsMap: !!effectsMap,
+        effectsSize,
+        insertType: insert.constructor?.name
+      });
+    }
+
     const serialized = {
       id: mixerTrackId,
       name: insert.label || mixerTrackId,
       gain: insert.gainNode?.gain?.value ?? 1,
       pan: insert.panNode?.pan?.value ?? 0,
+      mute: trackMeta?.mute || trackMeta?.muted || false,  // ✅ FIX: Capture mute state
       lowGain: trackMeta?.eq?.low ?? 0,
       midGain: trackMeta?.eq?.mid ?? 0,
       highGain: trackMeta?.eq?.high ?? 0,
-      type: forceType || trackMeta?.type || (mixerTrackId?.startsWith('bus-') ? 'bus' : 'track'),
-      insertEffects:
-        insert.effects && insert.effects.size > 0
-          ? Array.from(insert.effects.entries()).map(([effectId, effect]) => ({
-              id: effectId,
-              type: effect.type,
-              bypass: effect.bypass || false,
-              settings: normalizeEffectSettings(effect.type, effect.settings || {})
-            }))
-          : []
+      type: forceType || trackMeta?.type || (isBusChannel ? 'bus' : 'track'),
+      insertEffects
     };
 
     const sends = overrideSends ?? this._serializeSends(insert, trackMeta);
@@ -1006,6 +1182,321 @@ export class AudioExportManager {
     });
   }
 
+
+  // =================== EXTENDED EXPORT METHODS (Merged from ExportManager) ===================
+
+  /**
+   * Export selected mixer channels to audio files
+   * @param {Array<string>} channelIds - Channel IDs to export
+   * @param {object} options - Export options
+   * @param {Function} onProgress - Progress callback (channelId, progress, status)
+   */
+  async exportChannels(channelIds, options = {}, onProgress = null) {
+    if (this.isExporting) {
+      throw new Error('Export already in progress');
+    }
+
+    if (!channelIds || channelIds.length === 0) {
+      throw new Error('No channels selected for export');
+    }
+
+    const settings = { ...this.defaultSettings, ...options };
+    this.isExporting = true;
+
+    console.log(`🎵 Exporting ${channelIds.length} channels:`, channelIds, settings);
+
+    try {
+      const results = [];
+
+      for (let i = 0; i < channelIds.length; i++) {
+        const channelId = channelIds[i];
+
+        if (onProgress) {
+          onProgress(channelId, (i / channelIds.length) * 100, 'starting');
+        }
+
+        try {
+          const result = await this._exportChannel(channelId, settings, (progress) => {
+            if (onProgress) {
+              const overallProgress = (i / channelIds.length) * 100 + (progress / channelIds.length);
+              onProgress(channelId, overallProgress, 'exporting');
+            }
+          });
+
+          results.push({
+            channelId,
+            success: true,
+            file: result
+          });
+
+          if (onProgress) {
+            onProgress(channelId, ((i + 1) / channelIds.length) * 100, 'completed');
+          }
+        } catch (error) {
+          console.error(`❌ Failed to export channel ${channelId}:`, error);
+          results.push({
+            channelId,
+            success: false,
+            error: error.message
+          });
+
+          if (onProgress) {
+            onProgress(channelId, ((i + 1) / channelIds.length) * 100, 'error');
+          }
+        }
+      }
+
+      return results;
+    } finally {
+      this.isExporting = false;
+    }
+  }
+
+  /**
+   * Export master bus
+   */
+  async exportMaster(options = {}, onProgress = null) {
+    const audioEngine = AudioEngineGlobal.get();
+    if (!audioEngine) {
+      throw new Error('Audio engine not available');
+    }
+
+    return await this._exportChannel('master', { ...this.defaultSettings, ...options }, onProgress);
+  }
+
+  /**
+   * Export arrangement
+   */
+  async exportArrangement(arrangementId = null, options = {}, onProgress = null) {
+    if (this.isExporting) {
+      throw new Error('Export already in progress');
+    }
+
+    const settings = { ...this.defaultSettings, ...options };
+    this.isExporting = true;
+
+    try {
+      const { useArrangementStore } = await import('../../store/useArrangementStore');
+      const arrangementStore = useArrangementStore.getState();
+      const clips = arrangementStore.arrangementClips || [];
+
+      // Get arrangement metadata
+      let arrangementName = 'Arrangement';
+      let arrangementTempo = null;
+      try {
+        const { useArrangementWorkspaceStore } = await import('@/store/useArrangementWorkspaceStore');
+        const workspaceStore = useArrangementWorkspaceStore.getState();
+        const arrangement = arrangementId
+          ? workspaceStore.arrangements[arrangementId]
+          : workspaceStore.getActiveArrangement();
+
+        if (arrangement) {
+          arrangementName = arrangement.name || 'Arrangement';
+          arrangementTempo = arrangement.tempo;
+        }
+      } catch (err) { }
+
+      if (!clips || clips.length === 0) {
+        throw new Error('Arrangement has no clips');
+      }
+
+      console.log(`🎵 Exporting arrangement: ${arrangementName} (${clips.length} clips)`);
+
+      if (onProgress) onProgress(0, 'preparing');
+
+      // Convert clips to pattern sequence
+      const patterns = arrangementStore.patterns;
+      const patternSequence = [];
+      const { usePlaybackStore } = await import('../../store/usePlaybackStore');
+      const bpm = arrangementTempo || usePlaybackStore.getState().bpm || 140;
+
+      for (const clip of clips) {
+        if (clip.type === 'pattern' && clip.patternId) {
+          const pattern = patterns[clip.patternId];
+          if (pattern && pattern.data) {
+            const { patternData } = await this._preparePatternSnapshot(
+              pattern,
+              { includeAutomation: true }
+            );
+
+            const durationBeats = clip.duration || (pattern.settings?.length || 64) / 4;
+
+            patternSequence.push({
+              patternData,
+              startTime: clip.startTime || 0,
+              duration: durationBeats
+            });
+          }
+        }
+      }
+
+      if (patternSequence.length === 0) throw new Error('No pattern clips found to export');
+
+      if (onProgress) onProgress(20, 'rendering');
+
+      // Render
+      const renderResult = await this.renderEngine.renderArrangement(patternSequence, {
+        sampleRate: settings.quality.sampleRate || 44100,
+        includeEffects: settings.includeEffects,
+        bpm
+      });
+
+      if (onProgress) onProgress(60, 'processing');
+
+      // Process
+      const processedBuffer = await this.audioProcessor.processAudio(renderResult.audioBuffer, {
+        normalize: settings.normalize,
+        fadeIn: settings.fadeIn,
+        fadeOut: settings.fadeOut,
+        fadeInDuration: settings.fadeInDuration,
+        fadeOutDuration: settings.fadeOutDuration
+      });
+
+      if (onProgress) onProgress(80, 'converting');
+
+      // Convert
+      const blob = await this._convertToFormat(processedBuffer, settings.format, settings.quality);
+
+      // Filename
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+      const filenameTemplate = settings.fileNameTemplate || '{arrangementName}_{timestamp}';
+      const filename = filenameTemplate
+        .replace('{arrangementName}', arrangementName || 'arrangement')
+        .replace('{timestamp}', timestamp)
+        .replace('{format}', settings.format) || `arrangement_${Date.now()}.${this._getFileExtension(settings.format)}`;
+
+      if (onProgress) onProgress(90, 'finalizing');
+
+      // Download
+      if (settings.download !== false) {
+        await this.fileManager.saveAudioFile(blob, filename);
+      }
+
+      // Add to Project
+      let assetId = null;
+      if (settings.addToProject) {
+        const durationBeats = (processedBuffer.duration / 60) * bpm;
+        assetId = await this._createInstrumentFromExport({ buffer: processedBuffer }, arrangementName, durationBeats);
+      }
+
+      if (onProgress) onProgress(100, 'completed');
+
+      return {
+        arrangementId,
+        filename,
+        size: blob.size,
+        format: settings.format,
+        duration: processedBuffer.duration,
+        sampleRate: processedBuffer.sampleRate,
+        assetId,
+        audioBuffer: processedBuffer,
+        file: blob,
+        blob
+      };
+
+    } catch (error) {
+      console.error('Arrange export failed', error);
+      throw error;
+    } finally {
+      this.isExporting = false;
+    }
+  }
+
+  // --- Helpers for Extended Export ---
+
+  async _exportChannel(channelId, settings, onProgress) {
+    if (settings.mode === 'realtime') {
+      return await this._exportChannelRealtime(channelId, settings);
+    }
+
+    const { useArrangementStore } = await import('../../store/useArrangementStore');
+    const { useInstrumentsStore } = await import('../../store/useInstrumentsStore');
+
+    const arrangementStore = useArrangementStore.getState();
+    const activePatternId = arrangementStore.activePatternId;
+    if (!activePatternId) throw new Error('No active pattern');
+
+    const pattern = arrangementStore.patterns[activePatternId];
+    if (!pattern?.data) throw new Error('Pattern has no data');
+
+    // Identify instruments
+    const allInstruments = useInstrumentsStore.getState().instruments;
+    let targetInstruments = [];
+
+    if (channelId === 'master') {
+      targetInstruments = allInstruments; // Master gets everything
+    } else {
+      targetInstruments = allInstruments.filter(i => i.mixerTrackId === channelId);
+    }
+
+    const targetInstrumentIds = targetInstruments.map(i => i.id);
+
+    // Filter Pattern Data
+    const filteredData = { ...pattern, data: {} };
+
+    if (channelId === 'master') {
+      filteredData.data = pattern.data;
+    } else {
+      targetInstrumentIds.forEach(id => {
+        if (pattern.data[id]) filteredData.data[id] = pattern.data[id];
+      });
+    }
+
+    if (onProgress) onProgress(20);
+
+    const { patternData: fullPatternData } = await this._preparePatternSnapshot(filteredData, {
+      instrumentIds: channelId === 'master' ? Object.keys(filteredData.data) : targetInstrumentIds,
+      includeMasterChannel: channelId === 'master'
+    });
+
+    if (onProgress) onProgress(40);
+
+    const renderResult = await this.renderEngine.renderPattern(fullPatternData, {
+      sampleRate: settings.quality.sampleRate || 44100,
+      bitDepth: settings.quality.bitDepth || 16,
+      includeEffects: settings.includeEffects,
+      startTime: settings.startTime ?? 0,
+      endTime: settings.endTime ?? null
+    });
+
+    if (onProgress) onProgress(70);
+
+    const processedBuffer = await this.audioProcessor.processAudio(renderResult.audioBuffer, {
+      normalize: settings.normalize,
+      fadeOut: settings.fadeOut,
+      fadeIn: settings.fadeIn
+    });
+
+    if (onProgress) onProgress(90);
+
+    const blob = await this._convertToFormat(processedBuffer, settings.format, settings.quality);
+    const filename = `${(settings.fileNameTemplate || '{channelName}').replace('{channelName}', channelId)}.${this._getFileExtension(settings.format)}`;
+
+    let assetId = null;
+    if (settings.addToProject) {
+      const { usePlaybackStore } = await import('../../store/usePlaybackStore');
+      const bpm = usePlaybackStore.getState().bpm;
+      const durationBeats = (processedBuffer.duration / 60) * bpm;
+      assetId = await this._createInstrumentFromExport({ buffer: processedBuffer }, channelId, durationBeats);
+    }
+
+    if (settings.download !== false) {
+      await this.fileManager.saveAudioFile(blob, filename);
+    }
+
+    return {
+      channelId,
+      filename,
+      audioBuffer: processedBuffer,
+      file: blob,
+      assetId: assetId
+    };
+  }
+
+  async _exportChannelRealtime(channelId, settings) {
+    throw new Error('Realtime export moved to offline rendering for higher quality.');
+  }
+
   /**
    * Get export progress for UI
    */
@@ -1050,6 +1541,9 @@ export const audioExportManager = new Proxy({}, {
     return instance[prop];
   }
 });
+
+// ✅ Alias for backward compatibility (used by RenderPage, ProjectsPage)
+export const exportManager = audioExportManager;
 
 // ✅ FIX: Don't create instance on module load
 // Use getAudioExportManager() when you need the instance

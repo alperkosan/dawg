@@ -11,6 +11,7 @@ export const INSTRUMENT_CATEGORIES = {
   SAMPLER: 'sampler',
   MULTI_SAMPLER: 'multiSampler',
   VA_SYNTH: 'vaSynth',
+  ZENITH_SYNTH: 'zenithSynth',
   AI_INSTRUMENT: 'aiInstrument'
 };
 
@@ -32,6 +33,12 @@ export const CATEGORY_INFO = {
     icon: '🎛️',
     description: 'Virtual analog synthesizer with presets',
     engine: 'VASynthInstrument_v2'
+  },
+  [INSTRUMENT_CATEGORIES.ZENITH_SYNTH]: {
+    name: 'Zenith Synth',
+    icon: '⚡',
+    description: 'Premium synthesizer with 4 oscillators, advanced filter & modulation',
+    engine: 'ZenithSynthInstrument'
   },
   [INSTRUMENT_CATEGORIES.AI_INSTRUMENT]: {
     name: 'AI Instrument',
@@ -129,6 +136,57 @@ export const VA_SYNTH_PRESETS = {
   }
 };
 
+// =========================================================================
+// ⚡ ZENITH SYNTH PRESETS
+// =========================================================================
+export const ZENITH_SYNTH_PRESETS = {
+  bass: {
+    name: 'Bass',
+    presets: [
+      { id: 'deepsubbass', name: 'Deep Sub Bass', presetName: 'Deep Sub Bass', color: '#1a1a2e' },
+      { id: 'reesebass', name: 'Reese Bass', presetName: 'Reese Bass', color: '#16213e' },
+      { id: '808sub', name: '808 Sub', presetName: '808 Sub', color: '#0f3460' },
+      { id: 'acidbass', name: 'Acid Bass', presetName: 'Acid Bass', color: '#533483' },
+      { id: 'wobblebass', name: 'Wobble Bass', presetName: 'Wobble Bass', color: '#e94560' }
+    ]
+  },
+  lead: {
+    name: 'Lead',
+    presets: [
+      { id: 'supersawlead', name: 'Supersaw Lead', presetName: 'Supersaw Lead', color: '#ff6b6b' },
+      { id: 'plucklead', name: 'Pluck Lead', presetName: 'Pluck Lead', color: '#ee5a6f' },
+      { id: 'synclead', name: 'Sync Lead', presetName: 'Sync Lead', color: '#f06595' },
+      { id: 'arplead', name: 'Arp Lead', presetName: 'Arp Lead', color: '#cc5de8' },
+      { id: 'brasslead', name: 'Brass Lead', presetName: 'Brass Lead', color: '#845ef7' }
+    ]
+  },
+  pad: {
+    name: 'Pad',
+    presets: [
+      { id: 'warmpad', name: 'Warm Pad', presetName: 'Warm Pad', color: '#5f3dc4' },
+      { id: 'dreampad', name: 'Dream Pad', presetName: 'Dream Pad', color: '#7950f2' },
+      { id: 'strings', name: 'Strings', presetName: 'Strings', color: '#7048e8' },
+      { id: 'ambientpad', name: 'Ambient Pad', presetName: 'Ambient Pad', color: '#6741d9' }
+    ]
+  },
+  fx: {
+    name: 'FX',
+    presets: [
+      { id: 'riser', name: 'Riser', presetName: 'Riser', color: '#4c6ef5' },
+      { id: 'impact', name: 'Impact', presetName: 'Impact', color: '#4263eb' },
+      { id: 'sweep', name: 'Sweep', presetName: 'Sweep', color: '#3b5bdb' }
+    ]
+  },
+  keys: {
+    name: 'Keys',
+    presets: [
+      { id: 'epiano', name: 'E.Piano', presetName: 'E.Piano', color: '#364fc7' },
+      { id: 'organ', name: 'Organ', presetName: 'Organ', color: '#1c7ed6' },
+      { id: 'bell', name: 'Bell', presetName: 'Bell', color: '#1971c2' }
+    ]
+  }
+};
+
 /**
  * Helper to create instrument from preset
  */
@@ -170,6 +228,13 @@ export function createInstrumentFromPreset(category, preset, options = {}) {
         presetName: preset.presetName
       };
 
+    case INSTRUMENT_CATEGORIES.ZENITH_SYNTH:
+      return {
+        ...baseInstrument,
+        type: INSTRUMENT_TYPES.ZENITH,
+        presetName: preset.presetName
+      };
+
     case INSTRUMENT_CATEGORIES.AI_INSTRUMENT:
       // AI instruments are created via AI Instrument Panel, not from preset
       // This case should not be called, but included for completeness
@@ -191,6 +256,8 @@ export function getPresetsForCategory(category) {
       return MULTI_SAMPLER_PRESETS;
     case INSTRUMENT_CATEGORIES.VA_SYNTH:
       return VA_SYNTH_PRESETS;
+    case INSTRUMENT_CATEGORIES.ZENITH_SYNTH:
+      return ZENITH_SYNTH_PRESETS;
     case INSTRUMENT_CATEGORIES.AI_INSTRUMENT:
       // AI instruments don't have presets - they're generated on-demand
       return {};

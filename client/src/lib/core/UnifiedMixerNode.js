@@ -38,6 +38,9 @@ export class UnifiedMixerNode {
             peakTime: 0,
             processCount: 0
         };
+
+        // Callbacks
+        this.onLevelsUpdate = null;
     }
 
     /**
@@ -73,7 +76,7 @@ export class UnifiedMixerNode {
         try {
             // Dynamic import to bypass Vite bundling
             const dynamicImport = new Function('path', 'return import(path)');
-            this.wasmModule = await dynamicImport('/wasm/dawg_audio_dsp.js');
+            this.wasmModule = await dynamicImport(`/wasm/dawg_audio_dsp.js?t=${Date.now()}`);
             await this.wasmModule.default();
 
             logger.info('✅ WASM module loaded in main thread');
@@ -90,7 +93,7 @@ export class UnifiedMixerNode {
         try {
             // Register worklet module (only if not already registered)
             // Use public folder to avoid Vite bundling issues
-            const workletPath = '/worklets/UnifiedMixerWorklet.js';
+            const workletPath = `/worklets/UnifiedMixerWorklet.js?t=${Date.now()}`;
 
             try {
                 await this.audioContext.audioWorklet.addModule(workletPath);
@@ -102,33 +105,31 @@ export class UnifiedMixerNode {
                 logger.debug('Worklet already registered, reusing');
             }
 
-            // Create worklet node with 32 stereo inputs, 1 stereo output
-            // CRITICAL: Each input must be stereo (2 channels)
-            const inputChannelCounts = new Array(this.numChannels).fill(2);
-
             this.workletNode = new AudioWorkletNode(
                 this.audioContext,
                 'unified-mixer-worklet',
                 {
                     numberOfInputs: this.numChannels,
                     numberOfOutputs: 1,
-                    outputChannelCount: [2], // Stereo output
+                    outputChannelCount: [2],
                     channelCount: 2,  // Default channel count for connections
                     channelCountMode: 'explicit',  // Don't auto-adjust channel count
                     channelInterpretation: 'speakers',  // Stereo interpretation
                     processorOptions: {
+                        maxBlockSize: 4096,
                         numChannels: this.numChannels
                     }
                 }
             );
 
-            // IMPORTANT: Set each input to accept stereo (2 channels)
-            // This is done via the channelCount property which applies to all inputs
-
-            // Message handler
+            // Handle messages from worklet (stats, errors, meters)
             this.workletNode.port.onmessage = this._handleMessage.bind(this);
 
-            logger.info(`✅ UnifiedMixerWorklet created: ${this.numChannels} inputs`);
+            this.workletNode.onprocessorerror = (err) => {
+                logger.error('❌ Worklet Processor Error:', err);
+            };
+
+            logger.info('✅ AudioWorkletNode created');
         } catch (error) {
             logger.error('❌ Failed to create worklet node:', error);
             throw error;
@@ -146,8 +147,12 @@ export class UnifiedMixerNode {
 
             // Listen for initialization response
             const handleInit = (event) => {
-                if (event.data.type === 'wasm-initialized') {
+                const { type, data, levels } = event.data;
+
+                if (type === 'wasm-initialized') {
                     clearTimeout(timeout);
+
+                    // ✅ Restore standard message handler
                     this.workletNode.port.onmessage = this._handleMessage.bind(this);
 
                     if (event.data.success) {
@@ -163,7 +168,7 @@ export class UnifiedMixerNode {
             try {
                 // Fetch WASM binary in main thread (has fetch API)
                 logger.info('⏳ Fetching WASM binary...');
-                const wasmResponse = await fetch('/wasm/dawg_audio_dsp_bg.wasm');
+                const wasmResponse = await fetch(`/wasm/dawg_audio_dsp_bg.wasm?t=${Date.now()}`);
                 const wasmArrayBuffer = await wasmResponse.arrayBuffer();
                 logger.info(`✅ Fetched WASM binary: ${wasmArrayBuffer.byteLength} bytes`);
 
@@ -182,22 +187,6 @@ export class UnifiedMixerNode {
     }
 
     /**
-     * Handle messages from worklet
-     */
-    _handleMessage(event) {
-        const { type, data } = event.data;
-
-        switch (type) {
-            case 'stats':
-                this.stats = data;
-                break;
-
-            case 'error':
-                logger.error('❌ UnifiedMixerWorklet error:', data);
-                break;
-        }
-    }
-
     /**
      * Connect an audio source to a specific channel
      *
@@ -271,6 +260,30 @@ export class UnifiedMixerNode {
     }
 
     /**
+     * Reset a specific channel to default state
+     * @param {number} channelIdx - Channel index to reset
+     */
+    resetChannel(channelIdx) {
+        if (!this.isInitialized) return;
+
+        // Disconnect any source
+        this.disconnectChannel(channelIdx);
+
+        // Reset parameters to default
+        this.setChannelParams(channelIdx, {
+            gain: 1.0,
+            pan: 0.0,
+            mute: false,
+            solo: false,
+            eqActive: false,
+            compActive: false
+        });
+
+        // Clear effects (if logic allows, currently just params)
+        logger.debug(`✅ Reset channel ${channelIdx}`);
+    }
+
+    /**
      * Set channel EQ
      *
      * @param {number} channelIdx - Channel index
@@ -292,6 +305,23 @@ export class UnifiedMixerNode {
                 highGain,
                 lowFreq,
                 highFreq
+            }
+        });
+    }
+
+    /**
+     * Add an effect to a channel
+     * @param {number} channelIdx - Channel index
+     * @param {number} effectType - Effect Type ID (0=Delay)
+     */
+    addChannelEffect(channelIdx, effectType) {
+        if (!this.isInitialized) return;
+
+        this.workletNode.port.postMessage({
+            type: 'add-channel-effect',
+            data: {
+                channelIdx,
+                effectType
             }
         });
     }
@@ -360,6 +390,24 @@ export class UnifiedMixerNode {
      */
     getOutputNode() {
         return this.workletNode;
+    }
+
+    /**
+     * Handle messages from worklet
+     * @private
+     */
+    _handleMessage(event) {
+        const { type, data, levels } = event.data;
+
+        if (type === 'stats') {
+            this.stats = data;
+        } else if (type === 'set-levels') {
+            if (this.onLevelsUpdate) {
+                this.onLevelsUpdate(levels);
+            }
+        } else if (type === 'error') {
+            logger.error(`❌ UnifiedMixerWorklet Error: ${data.message}`);
+        }
     }
 
     /**

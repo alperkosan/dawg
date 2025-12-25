@@ -23,6 +23,7 @@ class ClipperProcessor extends AudioWorkletProcessor {
       { name: 'postGain', defaultValue: 0, minValue: -12, maxValue: 12 },
       { name: 'mix', defaultValue: 100, minValue: 0, maxValue: 100 },
       { name: 'mode', defaultValue: 0, minValue: 0, maxValue: 5 }, // 0-5: algorithms
+      { name: 'curve', defaultValue: 1, minValue: 0, maxValue: 2 }, // 0=soft, 1=medium, 2=hard
       { name: 'dcFilter', defaultValue: 1, minValue: 0, maxValue: 1 },
       { name: 'oversample', defaultValue: 2, minValue: 1, maxValue: 8 }
     ];
@@ -103,6 +104,31 @@ class ClipperProcessor extends AudioWorkletProcessor {
     return (Math.tanh(x * drive) / Math.tanh(drive)) * ceiling;
   }
 
+  // Clipping curves: soft, medium, hard
+  applyCurve(x, ceiling, curve) {
+    const abs = Math.abs(x);
+    if (abs <= ceiling) return x;
+
+    const overshoot = abs - ceiling;
+    const sign = Math.sign(x);
+
+    switch (Math.floor(curve)) {
+      case 0: // SOFT - Gentle tanh curve
+        const softDrive = 1 + overshoot * 2;
+        return sign * (ceiling + (overshoot / softDrive) * 0.3);
+
+      case 1: // MEDIUM - Balanced curve
+        const mediumDrive = 1 + overshoot;
+        return sign * (ceiling + (overshoot / mediumDrive) * 0.5);
+
+      case 2: // HARD - Aggressive hard clip
+        return sign * ceiling;
+
+      default:
+        return sign * ceiling;
+    }
+  }
+
   tubeClip(x, ceiling, hardness) {
     const asymmetry = 0.15 + (1 - hardness / 100) * 0.3;
     if (x > 0) {
@@ -123,12 +149,12 @@ class ClipperProcessor extends AudioWorkletProcessor {
   foldbackClip(x, ceiling) {
     const abs = Math.abs(x);
     if (abs <= ceiling) return x;
-    
+
     // Foldback calculation (non-iterative, more efficient)
     const period = 2 * ceiling;
     const phase = (abs - ceiling) % period;
     const cycles = Math.floor((abs - ceiling) / period);
-    
+
     let folded;
     if (phase < ceiling) {
       // Folding up
@@ -137,7 +163,7 @@ class ClipperProcessor extends AudioWorkletProcessor {
       // Folding down
       folded = phase - ceiling;
     }
-    
+
     // Apply sign
     const sign = Math.sign(x);
     return sign * folded;
@@ -150,24 +176,35 @@ class ClipperProcessor extends AudioWorkletProcessor {
     return Math.round(x / step) * step;
   }
 
-  // Apply clipping based on mode
-  applyClipping(x, ceiling, hardness, mode) {
+  // Apply clipping based on mode and curve
+  applyClipping(x, ceiling, hardness, mode, curve) {
+    let clipped;
+
     switch (Math.floor(mode)) {
       case 0: // HARD
-        return this.hardClip(x, ceiling);
+        clipped = this.hardClip(x, ceiling);
+        break;
       case 1: // SOFT
-        return this.softClip(x, ceiling, hardness);
+        clipped = this.softClip(x, ceiling, hardness);
+        break;
       case 2: // TUBE
-        return this.tubeClip(x, ceiling, hardness);
+        clipped = this.tubeClip(x, ceiling, hardness);
+        break;
       case 3: // DIODE
-        return this.diodeClip(x, ceiling, hardness);
+        clipped = this.diodeClip(x, ceiling, hardness);
+        break;
       case 4: // FOLDBACK
-        return this.foldbackClip(x, ceiling);
+        clipped = this.foldbackClip(x, ceiling);
+        break;
       case 5: // BITCRUSH
-        return this.bitcrushClip(x, hardness);
+        clipped = this.bitcrushClip(x, hardness);
+        break;
       default:
-        return this.hardClip(x, ceiling);
+        clipped = this.hardClip(x, ceiling);
     }
+
+    // Apply curve shaping (soft/medium/hard) to the clipped result
+    return this.applyCurve(clipped, ceiling, curve);
   }
 
   // 🎯 PROFESSIONAL HARMONIC GENERATION: Accurate clipping harmonics (like StandardClip)
@@ -180,7 +217,7 @@ class ClipperProcessor extends AudioWorkletProcessor {
     // 🎯 EVEN HARMONICS (2nd, 4th): Warm, tube-like
     // Proper harmonic generation from clipping nonlinearity
     const harmonic2 = x * abs * harmonicAmount * 0.12; // 2nd harmonic
-    
+
     // 🎯 ODD HARMONICS (3rd, 5th): Edgy, aggressive
     const harmonic3 = x * x * Math.sign(x) * abs * harmonicAmount * 0.08; // 3rd harmonic
     const harmonic5 = x * x * x * x * Math.sign(x) * abs * harmonicAmount * 0.03; // 5th harmonic
@@ -213,6 +250,7 @@ class ClipperProcessor extends AudioWorkletProcessor {
     const postGain = this.getParam(parameters.postGain, 0) ?? 0;
     const mix = this.getParam(parameters.mix, 0) ?? 100;
     const mode = this.getParam(parameters.mode, 0) ?? 0;
+    const curve = this.getParam(parameters.curve, 0) ?? 1;
     const dcFilterEnabled = this.getParam(parameters.dcFilter, 0) >= 0.5;
 
     const preGainLinear = this.dbToLinear(preGain);
@@ -224,8 +262,9 @@ class ClipperProcessor extends AudioWorkletProcessor {
     const outputLeft = output[0];
     const outputRight = output[1] || output[0];
 
-    // 🎯 OVERSAMPLING: Anti-aliasing for high-frequency content (if enabled)
-    const oversampleFactor = 1; // Can be increased if oversampling param is used
+    // 🎯 OVERSAMPLING: Anti-aliasing for high-frequency content
+    const oversample = this.getParam(parameters.oversample, 0) ?? 1;
+    const oversampleFactor = Math.max(1, Math.min(8, Math.floor(oversample)));
     const useOversampling = oversampleFactor > 1;
 
     for (let i = 0; i < blockSize; i++) {
@@ -237,16 +276,16 @@ class ClipperProcessor extends AudioWorkletProcessor {
       if (useOversampling) {
         // Process multiple samples per input sample (simplified for performance)
         for (let os = 0; os < oversampleFactor; os++) {
-          processedL = this.applyClipping(processedL, ceilingLinear, hardness, mode);
-          processedR = this.applyClipping(processedR, ceilingLinear, hardness, mode);
+          processedL = this.applyClipping(processedL, ceilingLinear, hardness, mode, curve);
+          processedR = this.applyClipping(processedR, ceilingLinear, hardness, mode, curve);
         }
         // Downsample (simple averaging)
         processedL /= oversampleFactor;
         processedR /= oversampleFactor;
       } else {
         // Apply clipping (standard processing)
-        processedL = this.applyClipping(processedL, ceilingLinear, hardness, mode);
-        processedR = this.applyClipping(processedR, ceilingLinear, hardness, mode);
+        processedL = this.applyClipping(processedL, ceilingLinear, hardness, mode, curve);
+        processedR = this.applyClipping(processedR, ceilingLinear, hardness, mode, curve);
       }
 
       // 🎯 HARMONIC GENERATION: Add after clipping for proper order

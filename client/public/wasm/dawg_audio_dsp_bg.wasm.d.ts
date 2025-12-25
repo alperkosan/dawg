@@ -1,6 +1,31 @@
 /* tslint:disable */
 /* eslint-disable */
 export const memory: WebAssembly.Memory;
+export const __wbg_audiograph_free: (a: number, b: number) => void;
+export const audiograph_new: (a: number) => number;
+export const audiograph_process_block: (a: number, b: number, c: number, d: any, e: number, f: number, g: any) => void;
+export const audiograph_add_test_node: (a: number) => number;
+export const __wbg_polysynth_free: (a: number, b: number) => void;
+export const polysynth_new: (a: number, b: number) => number;
+export const polysynth_trigger_note: (a: number, b: number, c: number) => void;
+export const polysynth_release_note: (a: number, b: number) => void;
+export const polysynth_process: (a: number) => number;
+export const __wbg_sampler_free: (a: number, b: number) => void;
+export const sampler_new: (a: number) => number;
+export const sampler_load_sample: (a: number, b: number, c: number, d: number, e: number) => void;
+export const sampler_get_current_right: (a: number) => number;
+export const sampler_process: (a: number) => number;
+export const sampler_set_adsr: (a: number, b: number, c: number, d: number, e: number) => void;
+export const sampler_release: (a: number) => void;
+export const sampler_play: (a: number) => void;
+export const sampler_stop: (a: number) => void;
+export const sampler_set_speed: (a: number, b: number) => void;
+export const sampler_set_position: (a: number, b: number) => void;
+export const sampler_set_range: (a: number, b: number, c: number) => void;
+export const sampler_get_length: (a: number) => number;
+export const sampler_set_loop: (a: number, b: number, c: number, d: number) => void;
+export const sampler_is_playing: (a: number) => number;
+export const sampler_reset: (a: number) => void;
 export const __wbg_biquadfilter_free: (a: number, b: number) => void;
 export const biquadfilter_new: () => number;
 export const biquadfilter_process: (a: number, b: number) => number;

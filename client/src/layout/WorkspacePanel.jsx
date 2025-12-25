@@ -3,6 +3,7 @@
 import React, { Suspense } from 'react';
 import DraggableWindow from '@/components/layout/DraggableWindow';
 import FileBrowserPanel from '@/features/file_browser/FileBrowserPanel';
+import CoProducerPanel from '@/features/co_producer/CoProducerPanel';
 import { usePanelsStore } from '@/store/usePanelsStore';
 import { useInstrumentsStore } from '@/store/useInstrumentsStore';
 import { useMixerStore } from '@/store/useMixerStore';
@@ -11,6 +12,7 @@ import { panelRegistry, panelDefinitions } from '@/config/panelConfig';
 import { pluginRegistry } from '@/config/pluginConfig';
 import PluginContainer from '@/components/plugins/container/PluginContainer';
 import { AudioContextService } from '@/lib/services/AudioContextService';
+import { EffectService } from '@/lib/services/EffectService';
 
 // Atmospheric effects
 import MatrixRain from '@/components/effects/MatrixRain';
@@ -19,11 +21,98 @@ import OceanBubbles from '@/components/effects/OceanBubbles';
 import RetroMiamiGrid from '@/components/effects/RetroMiamiGrid';
 import ParticlesEffect from '@/components/effects/ParticlesEffect';
 
+import { useFileBrowserStore } from '@/store/useFileBrowserStore';
+import AudioRecordingPanel from '@/components/audio/AudioRecordingPanel';
+
+
 function WorkspacePanel() {
   const {
     panels, panelStack, fullscreenPanel, pianoRollInstrumentId, editingInstrumentId,
     bringPanelToFront, togglePanel, handleMinimize, handleMaximize, updatePanelState
   } = usePanelsStore();
+
+  const isBrowserVisible = useFileBrowserStore(state => state.isBrowserVisible);
+  const isCoProducerOpen = usePanelsStore(state => state.isCoProducerOpen);
+  const [sidebarWidth, setSidebarWidth] = React.useState(280);
+  const [rightSidebarWidth, setRightSidebarWidth] = React.useState(300);
+  const [isResizing, setIsResizing] = React.useState(false);
+  const [isResizingRight, setIsResizingRight] = React.useState(false);
+  const [isAudioRecordingOpen, setIsAudioRecordingOpen] = React.useState(false);
+
+  // Keyboard shortcut for audio recording (Ctrl+Shift+R)
+  React.useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.ctrlKey && e.shiftKey && e.key === 'R') {
+        e.preventDefault();
+        setIsAudioRecordingOpen(prev => !prev);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+
+  const handleMouseDown = (e) => {
+    e.preventDefault();
+    setIsResizing(true);
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  };
+
+  React.useEffect(() => {
+    if (!isResizing) return;
+
+    const handleMouseMove = (e) => {
+      const newWidth = Math.max(200, Math.min(600, e.clientX));
+      setSidebarWidth(newWidth);
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizing]);
+
+  // Right Sidebar Resizing
+  const handleMouseDownRight = (e) => {
+    e.preventDefault();
+    setIsResizingRight(true);
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  };
+
+  React.useEffect(() => {
+    if (!isResizingRight) return;
+
+    const handleMouseMove = (e) => {
+      const newWidth = Math.max(250, Math.min(500, window.innerWidth - e.clientX));
+      setRightSidebarWidth(newWidth);
+    };
+
+    const handleMouseUp = () => {
+      setIsResizingRight(false);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizingRight]);
 
   const instruments = useInstrumentsStore(state => state.instruments);
   const mixerTracks = useMixerStore(state => state.mixerTracks);
@@ -39,6 +128,17 @@ function WorkspacePanel() {
   const themeName = activeTheme?.name || '';
 
   const baseZIndex = 10;
+
+  // Mobile detection
+  const [isMobile, setIsMobile] = React.useState(window.innerWidth < 768);
+
+  React.useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // Render appropriate effect based on theme
   const renderThemeEffect = () => {
@@ -163,16 +263,60 @@ function WorkspacePanel() {
   return (
     // 'workspace' sınıfı artık display: flex kullanıyor.
     <div className="workspace">
-      <FileBrowserPanel />
+      {isBrowserVisible && (
+        <>
+          {/* Mobile Backdrop */}
+          {isMobile && (
+            <div
+              style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 199 }}
+              onClick={() => useFileBrowserStore.getState().setBrowserVisible(false)}
+            />
+          )}
+          <div style={{
+            width: isMobile ? '80%' : sidebarWidth,
+            maxWidth: isMobile ? '300px' : 'none',
+            position: isMobile ? 'absolute' : 'relative',
+            flexShrink: 0,
+            height: '100%',
+            zIndex: isMobile ? 200 : 'auto',
+            background: 'var(--zenith-bg-secondary)',
+            boxShadow: isMobile ? '4px 0 12px rgba(0,0,0,0.5)' : 'none'
+          }}>
+            <FileBrowserPanel />
+            {!isMobile && (
+              <div
+                onMouseDown={handleMouseDown}
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  right: -4,
+                  width: 8,
+                  height: '100%',
+                  cursor: 'col-resize',
+                  zIndex: 100,
+                  // Visual indicator on hover/drag
+                  background: isResizing ? 'rgba(255,255,255,0.1)' : 'transparent',
+                }}
+                className="hover:bg-white/5 transition-colors"
+              />
+            )}
+          </div>
+        </>
+      )}
       {/* 'workspace__main-content' flex-grow: 1 ile geri kalan alanı kaplayacak */}
       <div className="workspace__main-content">
         {/* Atmospheric effects based on active theme */}
-        {renderThemeEffect()} 
+        {renderThemeEffect()}
         {Object.values(panels).map(panel => {
-          const isMaximized = fullscreenPanel === panel.id;
+          // ✅ MOBILE: Force maximize if on mobile
+          const isMaximized = isMobile ? true : (fullscreenPanel === panel.id);
 
-          if (fullscreenPanel && fullscreenPanel !== panel.id) return null;
+          if (fullscreenPanel && fullscreenPanel !== panel.id && !isMobile) return null;
           if (!panel.isOpen || panel.isMinimized) return null;
+
+          // Mobile: Only show the "topmost" or specifically active panel if multiple are open?
+          // For now, we rely on z-index or maybe we should only render the last touched one?
+          // Let's stick to DraggableWindow but forced to full size.
 
           let PanelContent;
           let panelDef = panelDefinitions[panel.id];
@@ -208,17 +352,7 @@ function WorkspacePanel() {
             };
 
             // Get the effect node for visualization
-            const effectNode = AudioContextService.getEffectNode(track.id, effect.id);
-
-            // 🔍 DEBUG: Log effect node lookup
-            console.log('🔍 [WorkspacePanel] Effect node lookup:', {
-              effectType: effect.type,
-              effectId: effect.id,
-              trackId: track.id,
-              effectNode,
-              hasPort: !!effectNode?.port,
-              nodeType: effectNode?.constructor?.name
-            });
+            const effectNode = EffectService.getEffectNode(track.id, effect.id);
 
             // Check if plugin uses v2.0 (has its own PluginContainerV2)
             const usesV2Container = ['MultiBandEQ', 'ModernDelay', 'OTT', 'ModernReverb', 'Compressor', 'Saturator', 'TidalFilter', 'StardustChorus', 'VortexPhaser', 'OrbitPanner', 'ArcadeCrusher', 'PitchShifter', 'BassEnhancer808', 'TransientDesigner', 'HalfTime', 'Limiter', 'Clipper', 'RhythmFX', 'Maximizer', 'Imager'].includes(effect.type);
@@ -256,27 +390,16 @@ function WorkspacePanel() {
             // Sample Editor: Pass editingInstrument (can be null for audio clip mode)
             if (panel.id === 'sample-editor') {
               componentProps.instrument = editingInstrument;
-              console.log('🎨 Rendering Sample Editor:', {
-                panelId: panel.id,
-                isOpen: panel.isOpen,
-                editingInstrument: editingInstrument?.name,
-                zIndex: baseZIndex + panelStack.indexOf(panel.id)
-              });
             }
 
             if (panel.id === 'piano-roll') {
               componentProps.instrument = pianoRollInstrument;
             }
-            
-            // ======================================================
-            // === EKLENECEK KOD BURASI ===
-            // Bu blok, synth editörüne doğru enstrümanı gönderir.
-            // ======================================================
+
             if (panel.id === 'instrument-editor-forgesynth') {
               componentProps.instrument = editingInstrument;
             }
-            // ======================================================
-            
+
             PanelContent = <PanelComponent {...componentProps} />;
           }
 
@@ -285,10 +408,10 @@ function WorkspacePanel() {
               key={panel.id}
               id={panel.id}
               title={panel.title}
-              position={panel.position}
+              position={isMobile ? { x: 0, y: 0 } : panel.position}
               zIndex={baseZIndex + panelStack.indexOf(panel.id)}
-              onPositionChange={(newPos) => updatePanelState(panel.id, { position: newPos })}
-              onSizeChange={(newSize) => updatePanelState(panel.id, { size: newSize })}
+              onPositionChange={(newPos) => !isMobile && updatePanelState(panel.id, { position: newPos })}
+              onSizeChange={(newSize) => !isMobile && updatePanelState(panel.id, { size: newSize })}
               onFocus={() => bringPanelToFront(panel.id)}
               onClose={() => togglePanel(panel.id)}
               onMinimize={() => handleMinimize(panel.id, panel.title)}
@@ -297,13 +420,73 @@ function WorkspacePanel() {
               size={isMaximized ? { width: '100%', height: '100%' } : (panel.size || panelDef.initialSize)}
               minSize={panelDef?.minSize}
               onContextMenu={(e) => e.preventDefault()}
+              // ✅ MOBILE: Disable dragging on mobile
+              draggable={!isMobile}
+              resizable={!isMobile}
             >
               {PanelContent}
             </DraggableWindow>
           );
         })}
       </div>
+
+      {isCoProducerOpen && (
+        <>
+          {/* Mobile Backdrop for CoProducer */}
+          {isMobile && (
+            <div
+              style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 199 }}
+              onClick={() => usePanelsStore.getState().toggleCoProducer()}
+            />
+          )}
+          <div style={{
+            width: isMobile ? '85%' : rightSidebarWidth,
+            maxWidth: isMobile ? '350px' : 'none',
+            position: isMobile ? 'absolute' : 'relative',
+            right: isMobile ? 0 : 'auto',
+            flexShrink: 0,
+            height: '100%',
+            zIndex: isMobile ? 200 : 'auto',
+            background: 'var(--zenith-bg-secondary)',
+            boxShadow: isMobile ? '-4px 0 12px rgba(0,0,0,0.5)' : 'none'
+          }}>
+            {!isMobile && (
+              <div
+                onMouseDown={handleMouseDownRight}
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: -4,
+                  width: 8,
+                  height: '100%',
+                  cursor: 'col-resize',
+                  zIndex: 100,
+                  background: isResizingRight ? 'rgba(255,255,255,0.1)' : 'transparent',
+                }}
+                className="hover:bg-white/5 transition-colors"
+              />
+            )}
+            <CoProducerPanel />
+          </div>
+        </>
+      )}
+
+      {/* Audio Recording Panel */}
+      {isAudioRecordingOpen && (
+        <div style={{
+          position: 'fixed',
+          top: '80px',
+          right: '20px',
+          zIndex: 1000
+        }}>
+          <AudioRecordingPanel
+            isOpen={isAudioRecordingOpen}
+            onClose={() => setIsAudioRecordingOpen(false)}
+          />
+        </div>
+      )}
     </div>
+
   );
 }
 

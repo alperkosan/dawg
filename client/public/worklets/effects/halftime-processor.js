@@ -23,7 +23,8 @@ class HalfTimeProcessor extends AudioWorkletProcessor {
       { name: 'mix', defaultValue: 100, minValue: 0, maxValue: 100 },
       { name: 'mode', defaultValue: 0, minValue: 0, maxValue: 5 },
       { name: 'analogWarmth', defaultValue: 0, minValue: 0, maxValue: 100 },
-      { name: 'glitchAmount', defaultValue: 0, minValue: 0, maxValue: 100 }
+      { name: 'glitchAmount', defaultValue: 0, minValue: 0, maxValue: 100 },
+      { name: 'reverse', defaultValue: 0, minValue: 0, maxValue: 1 } // 0=normal, 1=reverse
     ];
   }
 
@@ -175,14 +176,18 @@ class HalfTimeProcessor extends AudioWorkletProcessor {
   }
 
   // Process a single grain with high-quality interpolation
-  processGrain(grain, state) {
+  processGrain(grain, state, reverse) {
     if (!grain.active || grain.phase >= grain.size) {
       grain.active = false;
       return 0;
     }
 
     // Calculate read position with pitch shift
-    const readOffset = grain.phase * grain.pitchRatio;
+    let readOffset = grain.phase * grain.pitchRatio;
+    if (reverse) {
+      // Reverse: read backwards from end of grain
+      readOffset = (grain.size - grain.phase) * grain.pitchRatio;
+    }
     const readPos = (grain.startPos + readOffset) % state.buffer.length;
 
     // Cubic interpolation for smoother sound
@@ -265,6 +270,7 @@ class HalfTimeProcessor extends AudioWorkletProcessor {
     const mode = Math.floor(this.getParam(parameters.mode, 0) || 0);
     const analogWarmth = this.getParam(parameters.analogWarmth, 0) || 0;
     const glitchAmount = this.getParam(parameters.glitchAmount, 0) || 0;
+    const reverse = this.getParam(parameters.reverse, 0) >= 0.5;
 
     const state = this.channelState[channel];
     const modeProfile = this.modeProfiles[mode] || this.modeProfiles[0];
@@ -327,7 +333,7 @@ class HalfTimeProcessor extends AudioWorkletProcessor {
     for (let i = state.grains.length - 1; i >= 0; i--) {
       const grain = state.grains[i];
       if (grain.active) {
-        output += this.processGrain(grain, state);
+        output += this.processGrain(grain, state, reverse);
         activeCount++;
       } else {
         // Remove inactive grains

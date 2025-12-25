@@ -14,11 +14,12 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import PluginContainerV2 from '../container/PluginContainerV2';
-import { Knob, Slider, Checkbox } from '@/components/controls';
+import { Knob, Slider, Checkbox, ModeSelector } from '@/components/controls';
 import { getCategoryColors } from '../PluginDesignSystem';
 import { useParameterBatcher } from '@/services/ParameterBatcher';
 import { useRenderer } from '@/services/CanvasRenderManager';
 import { useMixerStore } from '@/store/useMixerStore';
+import { usePlaybackStore } from '@/store/usePlaybackStore';
 
 // ============================================================================
 // PING-PONG VISUALIZER - Using CanvasRenderManager
@@ -210,10 +211,26 @@ const ModernDelayUI_V2 = ({ trackId, effect, effectNode, onChange, definition })
   const [localWobble, setLocalWobble] = useState(wobble);
   const [localFlutter, setLocalFlutter] = useState(flutter);
   const [localWidth, setLocalWidth] = useState(width);
+  
+  // ✅ NEW: Delay model, tempo sync, and note division state
+  const [localDelayModel, setLocalDelayModel] = useState(effect.settings.delayModel !== undefined ? effect.settings.delayModel : 0);
+  const [localTempoSync, setLocalTempoSync] = useState(effect.settings.tempoSync !== undefined ? effect.settings.tempoSync : 0);
+  const [localNoteDivision, setLocalNoteDivision] = useState(effect.settings.noteDivision !== undefined ? effect.settings.noteDivision : 3);
+  
+  // Get BPM from playback store
+  const bpm = usePlaybackStore(state => state.bpm || 120);
 
   const categoryColors = useMemo(() => getCategoryColors('spacetime-chamber'), []);
   const { setParam } = useParameterBatcher(effectNode);
   const { handleMixerEffectChange } = useMixerStore.getState();
+  
+  // ✅ NEW: Update BPM parameter when BPM changes
+  useEffect(() => {
+    if (localTempoSync > 0.5) {
+      setParam('bpm', bpm);
+      handleMixerEffectChange(trackId, effect.id, { bpm });
+    }
+  }, [bpm, localTempoSync, setParam, handleMixerEffectChange, trackId, effect.id]);
 
   // Sync with presets
   useEffect(() => {
@@ -229,6 +246,9 @@ const ModernDelayUI_V2 = ({ trackId, effect, effectNode, onChange, definition })
     if (effect.settings.wobble !== undefined) setLocalWobble(effect.settings.wobble);
     if (effect.settings.flutter !== undefined) setLocalFlutter(effect.settings.flutter);
     if (effect.settings.width !== undefined) setLocalWidth(effect.settings.width);
+    if (effect.settings.delayModel !== undefined) setLocalDelayModel(effect.settings.delayModel);
+    if (effect.settings.tempoSync !== undefined) setLocalTempoSync(effect.settings.tempoSync);
+    if (effect.settings.noteDivision !== undefined) setLocalNoteDivision(effect.settings.noteDivision);
   }, [effect.settings]);
 
   const handleParamChange = useCallback((key, value) => {
@@ -249,6 +269,9 @@ const ModernDelayUI_V2 = ({ trackId, effect, effectNode, onChange, definition })
       case 'wobble': setLocalWobble(value); break;
       case 'flutter': setLocalFlutter(value); break;
       case 'width': setLocalWidth(value); break;
+      case 'delayModel': setLocalDelayModel(value); break;
+      case 'tempoSync': setLocalTempoSync(value); break;
+      case 'noteDivision': setLocalNoteDivision(value); break;
     }
   }, [setParam, handleMixerEffectChange, trackId, effect.id, onChange]);
 
@@ -281,6 +304,56 @@ const ModernDelayUI_V2 = ({ trackId, effect, effectNode, onChange, definition })
           {/* Time & Feedback Controls */}
           <div className="flex-1 bg-gradient-to-br from-black/50 to-[#2d1854]/30 rounded-xl p-3 border border-[#A855F7]/20 flex flex-col justify-between min-w-0">
             <div className="text-[11px] font-bold text-[#22D3EE]/70 mb-2 uppercase tracking-wider truncate">Time & Space</div>
+            
+            {/* ✅ NEW: Delay Model Selector */}
+            <div className="mb-3 bg-black/30 rounded-lg p-2 border border-[#A855F7]/20">
+              <div className="text-[9px] text-white/60 mb-1 text-center">DELAY MODEL</div>
+              <ModeSelector
+                modes={[
+                  { id: 0, name: 'Digital', description: 'Clean' },
+                  { id: 1, name: 'Tape', description: 'Vintage' },
+                  { id: 2, name: 'Analog', description: 'Warm' },
+                  { id: 3, name: 'BBD', description: 'Classic' }
+                ]}
+                activeMode={localDelayModel}
+                onChange={(mode) => handleParamChange('delayModel', mode)}
+                compact={true}
+              />
+            </div>
+            
+            {/* ✅ NEW: Tempo Sync Toggle & Note Division */}
+            <div className="mb-3 bg-black/30 rounded-lg p-2 border border-[#A855F7]/20">
+              <div className="flex items-center justify-between mb-2">
+                <div className="text-[9px] text-white/60">TEMPO SYNC</div>
+                <Checkbox
+                  checked={localTempoSync > 0.5}
+                  onChange={(checked) => handleParamChange('tempoSync', checked ? 1 : 0)}
+                  size="small"
+                />
+              </div>
+              {localTempoSync > 0.5 && (
+                <div className="mt-2 animate-in fade-in duration-300">
+                  <div className="text-[9px] text-white/60 mb-1 text-center">NOTE DIVISION</div>
+                  <ModeSelector
+                    modes={[
+                      { id: 0, name: '1/32', description: '32nd' },
+                      { id: 1, name: '1/16', description: '16th' },
+                      { id: 2, name: '1/8', description: '8th' },
+                      { id: 3, name: '1/4', description: 'Quarter' },
+                      { id: 4, name: '1/2', description: 'Half' },
+                      { id: 5, name: '1/1', description: 'Whole' },
+                      { id: 6, name: '1/8.', description: 'Dotted 8th' },
+                      { id: 7, name: '1/4.', description: 'Dotted 4th' },
+                      { id: 8, name: '1/8t', description: '8th Triplet' },
+                      { id: 9, name: '1/4t', description: '4th Triplet' }
+                    ]}
+                    activeMode={localNoteDivision}
+                    onChange={(mode) => handleParamChange('noteDivision', mode)}
+                    compact={true}
+                  />
+                </div>
+              )}
+            </div>
 
             <div className="flex flex-col gap-2">
               {/* Left */}
@@ -296,7 +369,8 @@ const ModernDelayUI_V2 = ({ trackId, effect, effectNode, onChange, definition })
                     defaultValue={375}
                     sizeVariant="medium"
                     category="spacetime-chamber"
-                    valueFormatter={(v) => `${v.toFixed(0)} ms`}
+                    valueFormatter={(v) => localTempoSync > 0.5 ? 'SYNC' : `${v.toFixed(0)} ms`}
+                    disabled={localTempoSync > 0.5}
                   />
                   <div className="flex-1 pt-3">
                     <Slider
@@ -327,7 +401,8 @@ const ModernDelayUI_V2 = ({ trackId, effect, effectNode, onChange, definition })
                     defaultValue={500}
                     sizeVariant="medium"
                     category="spacetime-chamber"
-                    valueFormatter={(v) => `${v.toFixed(0)} ms`}
+                    valueFormatter={(v) => localTempoSync > 0.5 ? 'SYNC' : `${v.toFixed(0)} ms`}
+                    disabled={localTempoSync > 0.5}
                   />
                   <div className="flex-1 pt-3">
                     <Slider

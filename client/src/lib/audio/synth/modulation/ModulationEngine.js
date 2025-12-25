@@ -16,6 +16,9 @@
  */
 export const ModulationSourceType = {
   LFO_1: 'lfo_1',
+  LFO_2: 'lfo_2',
+  LFO_3: 'lfo_3',
+  LFO_4: 'lfo_4',
   ENV_1: 'env_1',      // Filter envelope
   ENV_2: 'env_2',      // Amplitude envelope
   VELOCITY: 'velocity',
@@ -115,11 +118,11 @@ export class ModulationEngine {
       this.slots.push(new ModulationSlot(`mod_${i}`));
     }
 
-    // External sources (injected from VASynth)
-    this.lfo1 = null;              // LFO instance
+    // External sources (injected from VASynth/ZenithSynth)
+    this.lfos = [null, null, null, null]; // Array of 4 LFO instances
     this.filterEnvelope = null;    // Filter envelope instance
     this.amplitudeEnvelope = null; // Amplitude envelope instance
-    
+
     // MIDI sources (set from noteOn)
     this.currentVelocity = 0;      // 0-127
     this.currentAftertouch = 0;    // 0-127
@@ -134,11 +137,25 @@ export class ModulationEngine {
   }
 
   /**
-   * Set LFO source
+   * Set LFO sources
+   */
+  setLFOs(lfos) {
+    if (Array.isArray(lfos)) {
+      this.lfos = lfos;
+      lfos.forEach((lfo, i) => {
+        if (lfo) this._ensureSourceActive(`lfo_${i + 1}`);
+      });
+    } else {
+      this.lfos[0] = lfos;
+      if (lfos) this._ensureSourceActive(ModulationSourceType.LFO_1);
+    }
+  }
+
+  /**
+   * Deprecated: Set LFO 1 only
    */
   setLFO(lfo) {
-    this.lfo1 = lfo;
-    this._ensureSourceActive(ModulationSourceType.LFO_1);
+    this.setLFOs([lfo, null, null, null]);
   }
 
   /**
@@ -164,30 +181,32 @@ export class ModulationEngine {
   _getSourceValue(sourceType) {
     switch (sourceType) {
       case ModulationSourceType.LFO_1:
-        if (this.lfo1) {
-          if (this.lfo1.getRawValue) {
-            return this.lfo1.getRawValue();
+      case ModulationSourceType.LFO_2:
+      case ModulationSourceType.LFO_3:
+      case ModulationSourceType.LFO_4:
+        const index = parseInt(sourceType.split('_')[1]) - 1;
+        const lfo = this.lfos[index];
+        if (lfo) {
+          if (lfo.getRawValue) {
+            return lfo.getRawValue();
           }
-          if (this.lfo1.getCurrentValue) {
-            return this.lfo1.getCurrentValue();
+          if (lfo.getCurrentValue) {
+            return lfo.getCurrentValue();
           }
         }
         return 0;
 
       case ModulationSourceType.ENV_1:
         // Filter envelope - get current value (0-1)
-        if (this.filterEnvelope) {
-          // TODO: Get current envelope value
-          // For now, return 0 (envelope tracking not implemented)
-          return 0;
+        if (this.filterEnvelope && this.filterEnvelope.getCurrentValue) {
+          return this.filterEnvelope.getCurrentValue();
         }
         return 0;
 
       case ModulationSourceType.ENV_2:
         // Amplitude envelope - get current value (0-1)
-        if (this.amplitudeEnvelope) {
-          // TODO: Get current envelope value
-          return 0;
+        if (this.amplitudeEnvelope && this.amplitudeEnvelope.getCurrentValue) {
+          return this.amplitudeEnvelope.getCurrentValue();
         }
         return 0;
 
@@ -383,7 +402,7 @@ export class ModulationEngine {
   dispose() {
     this.stopUpdates();
     this.clear();
-    this.lfo1 = null;
+    this.lfos = [null, null, null, null];
     this.filterEnvelope = null;
     this.amplitudeEnvelope = null;
   }
@@ -392,12 +411,17 @@ export class ModulationEngine {
     if (!sourceType) return;
     const hasActiveSlot = this.slots.some(slot => slot.enabled && slot.source === sourceType);
     if (!hasActiveSlot) return;
-    if (sourceType === ModulationSourceType.LFO_1 && this.lfo1) {
-      if (this.lfo1.frequency <= 0.0001 && this.lfo1.setFrequency) {
-        this.lfo1.setFrequency(1);
-      }
-      if (!this.lfo1.isRunning && this.lfo1.start) {
-        this.lfo1.start();
+
+    if (sourceType.startsWith('lfo_')) {
+      const index = parseInt(sourceType.split('_')[1]) - 1;
+      const lfo = this.lfos[index];
+      if (lfo) {
+        if (lfo.frequency <= 0.0001 && lfo.setFrequency) {
+          lfo.setFrequency(1);
+        }
+        if (!lfo.isRunning && lfo.start) {
+          lfo.start();
+        }
       }
     }
   }
@@ -406,8 +430,13 @@ export class ModulationEngine {
     if (!sourceType) return;
     const stillUsed = this.slots.some(slot => slot.enabled && slot.source === sourceType);
     if (stillUsed) return;
-    if (sourceType === ModulationSourceType.LFO_1 && this.lfo1 && this.lfo1.isRunning && this.lfo1.stop) {
-      this.lfo1.stop();
+
+    if (sourceType.startsWith('lfo_')) {
+      const index = parseInt(sourceType.split('_')[1]) - 1;
+      const lfo = this.lfos[index];
+      if (lfo && lfo.isRunning && lfo.stop) {
+        lfo.stop();
+      }
     }
   }
 }

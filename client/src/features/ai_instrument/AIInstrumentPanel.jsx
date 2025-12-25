@@ -24,11 +24,13 @@ export function AIInstrumentPanel() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [variations, setVariations] = useState([]);
+  const [lastResult, setLastResult] = useState(null); // ✅ NEW: Store full result
   const [selectedVariation, setSelectedVariation] = useState(0);
   const [activeTab, setActiveTab] = useState('generate'); // 'generate', 'presets', 'suggestions'
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [duration, setDuration] = useState(5);
-  const [provider, setProvider] = useState('stability-ai');
+  const [promptInfluence, setPromptInfluence] = useState(0.7); // ✅ Default 0.7 for better quality
+  const [provider, setProvider] = useState('elevenlabs'); // ✨ ElevenLabs as default
 
   // Get project state for analysis
   const { patterns } = useArrangementStore();
@@ -56,10 +58,12 @@ export function AIInstrumentPanel() {
       const result = await aiInstrumentService.generateInstrument(prompt, {
         variations: 3,
         duration,
-        provider
+        provider,
+        promptInfluence // ✅ Pass user choice
       });
 
       setVariations(result.variations);
+      setLastResult(result);
       setSelectedVariation(0);
     } catch (err) {
       setError(err.message || 'Failed to generate instrument');
@@ -86,9 +90,11 @@ export function AIInstrumentPanel() {
       const result = await aiInstrumentService.generateInstrument(suggestionPrompt, {
         variations: 3,
         duration,
-        provider
+        provider,
+        promptInfluence // ✅ Pass user choice
       });
       setVariations(result.variations);
+      setLastResult(result);
       setSelectedVariation(0);
     } catch (err) {
       setError(err.message || 'Failed to generate instrument');
@@ -108,12 +114,14 @@ export function AIInstrumentPanel() {
       await aiInstrumentManager.createAIInstrument(prompt, {
         variationIndex: selectedVariation,
         provider,
-        duration
+        duration,
+        preGeneratedResult: lastResult // ✅ Pass result to avoid re-generation
       });
-      
+
       // Reset state
       setPrompt('');
       setVariations([]);
+      setLastResult(null);
       setSelectedVariation(0);
     } catch (err) {
       setError(err.message || 'Failed to create instrument');
@@ -239,10 +247,28 @@ export function AIInstrumentPanel() {
                       onChange={(e) => setProvider(e.target.value)}
                       className="ai-instrument-panel__select"
                     >
+                      <option value="elevenlabs">ElevenLabs Sound FX</option>
                       <option value="stability-ai">Stable Audio</option>
                       <option value="audiocraft" disabled>AudioCraft (Coming Soon)</option>
-                      <option value="mubert" disabled>Mubert (Coming Soon)</option>
                     </select>
+                  </div>
+                  <div className="ai-instrument-panel__advanced-row">
+                    <div className="ai-instrument-panel__label-with-value">
+                      <label className="ai-instrument-panel__label">Model Adherence</label>
+                      <span className="ai-instrument-panel__value">{Math.round(promptInfluence * 100)}%</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={1}
+                      step={0.1}
+                      value={promptInfluence}
+                      onChange={(e) => setPromptInfluence(Number(e.target.value))}
+                      className="ai-instrument-panel__range-input"
+                    />
+                    <p className="ai-instrument-panel__help-text">
+                      How strictly the AI follows your prompt. Higher values follow instructions better but might be less "creative".
+                    </p>
                   </div>
                 </div>
               )}

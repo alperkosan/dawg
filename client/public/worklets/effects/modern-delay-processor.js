@@ -22,7 +22,15 @@ class ModernDelayProcessor extends AudioWorkletProcessor {
       { name: 'saturation', defaultValue: 0, minValue: 0, maxValue: 1 },
       { name: 'diffusion', defaultValue: 0, minValue: 0, maxValue: 1 },
       { name: 'wobble', defaultValue: 0, minValue: 0, maxValue: 1 },
-      { name: 'flutter', defaultValue: 0, minValue: 0, maxValue: 1 }
+      { name: 'flutter', defaultValue: 0, minValue: 0, maxValue: 1 },
+      // ✅ NEW: Delay model (0=Digital, 1=Tape, 2=Analog, 3=BBD)
+      { name: 'delayModel', defaultValue: 0, minValue: 0, maxValue: 3 },
+      // ✅ NEW: Tempo sync (0=off, 1=on)
+      { name: 'tempoSync', defaultValue: 0, minValue: 0, maxValue: 1 },
+      // ✅ NEW: Note division (0=1/32, 1=1/16, 2=1/8, 3=1/4, 4=1/2, 5=1/1, 6=1/8., 7=1/4., 8=1/8t, 9=1/4t)
+      { name: 'noteDivision', defaultValue: 3, minValue: 0, maxValue: 9 },
+      // ✅ NEW: BPM (for tempo sync calculation)
+      { name: 'bpm', defaultValue: 120, minValue: 60, maxValue: 200 }
     ];
   }
 
@@ -48,6 +56,11 @@ class ModernDelayProcessor extends AudioWorkletProcessor {
     this.flutterPhase = 0;
     this.flutterTarget = 0;
     this.flutterCurrent = 0;
+    
+    // ✅ NEW: Delay model state
+    this.delayModel = 0; // 0=Digital, 1=Tape, 2=Analog, 3=BBD
+    this.tapePhase = 0; // For tape wow/flutter
+    this.bbdNoise = 0; // For BBD noise simulation
 
     // Diffusion (allpass filters)
     const allpassSizes = [
@@ -100,6 +113,14 @@ class ModernDelayProcessor extends AudioWorkletProcessor {
     const diffusion = this.getParam(parameters.diffusion, 0) ?? this.settings.diffusion ?? 0;
     const wobble = this.getParam(parameters.wobble, 0) ?? this.settings.wobble ?? 0;
     const flutter = this.getParam(parameters.flutter, 0) ?? this.settings.flutter ?? 0;
+    
+    // ✅ NEW: Delay model and tempo sync parameters
+    const delayModel = Math.floor(this.getParam(parameters.delayModel, 0) ?? this.settings.delayModel ?? 0);
+    const tempoSync = this.getParam(parameters.tempoSync, 0) ?? this.settings.tempoSync ?? 0;
+    const noteDivision = Math.floor(this.getParam(parameters.noteDivision, 0) ?? this.settings.noteDivision ?? 3);
+    const bpm = this.getParam(parameters.bpm, 0) ?? this.settings.bpm ?? 120;
+    
+    this.delayModel = delayModel;
 
     if (this.bypassed) {
       output[0].set(input[0]);
@@ -109,9 +130,34 @@ class ModernDelayProcessor extends AudioWorkletProcessor {
 
     // 🎯 PROFESSIONAL DELAY CALCULATIONS
 
+    // ✅ NEW: Calculate delay time from tempo sync if enabled
+    let effectiveTimeLeft = timeLeft;
+    let effectiveTimeRight = timeRight;
+    
+    if (tempoSync > 0.5) {
+      // Tempo sync mode: calculate delay time from BPM and note division
+      const beatDuration = 60 / bpm; // One quarter note in seconds
+      const noteDivisions = [
+        beatDuration / 8,    // 1/32
+        beatDuration / 4,    // 1/16
+        beatDuration / 2,    // 1/8
+        beatDuration,        // 1/4
+        beatDuration * 2,    // 1/2
+        beatDuration * 4,    // 1/1
+        beatDuration * 0.75, // 1/8. (dotted)
+        beatDuration * 1.5,  // 1/4. (dotted)
+        beatDuration / 3,    // 1/8t (triplet)
+        beatDuration * 2 / 3 // 1/4t (triplet)
+      ];
+      
+      const syncTime = noteDivisions[noteDivision] || beatDuration;
+      effectiveTimeLeft = syncTime;
+      effectiveTimeRight = syncTime;
+    }
+
     // Base delay samples
-    const baseDelaySamplesLeft = timeLeft * this.sampleRate;
-    const baseDelaySamplesRight = timeRight * this.sampleRate;
+    const baseDelaySamplesLeft = effectiveTimeLeft * this.sampleRate;
+    const baseDelaySamplesRight = effectiveTimeRight * this.sampleRate;
 
     // Professional filter coefficient: Pre-warped bilinear transform
     const omega = 2 * Math.PI * filterFreq / this.sampleRate;
@@ -197,12 +243,60 @@ class ModernDelayProcessor extends AudioWorkletProcessor {
         delayedRight = this.processAllpass(delayedRight, this.allpassFilters[3], diffusionAmount);
       }
 
-      // One-pole lowpass filter
-      this.filterStateLeft = delayedLeft + filterCoeff * (this.filterStateLeft - delayedLeft);
-      this.filterStateRight = delayedRight + filterCoeff * (this.filterStateRight - delayedRight);
+      // ✅ NEW: Apply delay model characteristics
+      let modelProcessedLeft = delayedLeft;
+      let modelProcessedRight = delayedRight;
+      
+      switch (delayModel) {
+        case 1: // Tape
+          // Tape characteristics: wow/flutter, saturation, high-frequency rolloff
+          this.tapePhase += (2 * Math.PI * 0.5) / this.sampleRate; // 0.5 Hz wow
+          if (this.tapePhase > Math.PI * 2) this.tapePhase -= Math.PI * 2;
+          const tapeMod = Math.sin(this.tapePhase) * 0.001 * this.sampleRate; // 1ms modulation
+          // Apply tape saturation
+          modelProcessedLeft = Math.tanh(delayedLeft * 1.5) / Math.tanh(1.5);
+          modelProcessedRight = Math.tanh(delayedRight * 1.5) / Math.tanh(1.5);
+          // High-frequency rolloff (tape characteristic)
+          const tapeFilterCoeff = Math.exp(-2 * Math.PI * 5000 / this.sampleRate);
+          this.filterStateLeft = modelProcessedLeft + tapeFilterCoeff * (this.filterStateLeft - modelProcessedLeft);
+          this.filterStateRight = modelProcessedRight + tapeFilterCoeff * (this.filterStateRight - modelProcessedRight);
+          modelProcessedLeft = this.filterStateLeft;
+          modelProcessedRight = this.filterStateRight;
+          break;
+        case 2: // Analog
+          // Analog characteristics: warm saturation, slight filtering
+          modelProcessedLeft = Math.tanh(delayedLeft * 1.2) / Math.tanh(1.2);
+          modelProcessedRight = Math.tanh(delayedRight * 1.2) / Math.tanh(1.2);
+          // Slight high-frequency rolloff
+          const analogFilterCoeff = Math.exp(-2 * Math.PI * 8000 / this.sampleRate);
+          this.filterStateLeft = modelProcessedLeft + analogFilterCoeff * (this.filterStateLeft - modelProcessedLeft);
+          this.filterStateRight = modelProcessedRight + analogFilterCoeff * (this.filterStateRight - modelProcessedRight);
+          modelProcessedLeft = this.filterStateLeft;
+          modelProcessedRight = this.filterStateRight;
+          break;
+        case 3: // BBD (Bucket Brigade Delay)
+          // BBD characteristics: noise, slight filtering, non-linear response
+          this.bbdNoise = (Math.random() * 2 - 1) * 0.0001; // Small noise
+          modelProcessedLeft = delayedLeft + this.bbdNoise;
+          modelProcessedRight = delayedRight + this.bbdNoise;
+          // BBD has limited bandwidth
+          const bbdFilterCoeff = Math.exp(-2 * Math.PI * 6000 / this.sampleRate);
+          this.filterStateLeft = modelProcessedLeft + bbdFilterCoeff * (this.filterStateLeft - modelProcessedLeft);
+          this.filterStateRight = modelProcessedRight + bbdFilterCoeff * (this.filterStateRight - modelProcessedRight);
+          modelProcessedLeft = this.filterStateLeft;
+          modelProcessedRight = this.filterStateRight;
+          break;
+        default: // Digital (0)
+          // Digital: clean, no processing
+          this.filterStateLeft = delayedLeft + filterCoeff * (this.filterStateLeft - delayedLeft);
+          this.filterStateRight = delayedRight + filterCoeff * (this.filterStateRight - delayedRight);
+          modelProcessedLeft = this.filterStateLeft;
+          modelProcessedRight = this.filterStateRight;
+          break;
+      }
 
-      let filteredLeft = this.filterStateLeft;
-      let filteredRight = this.filterStateRight;
+      let filteredLeft = modelProcessedLeft;
+      let filteredRight = modelProcessedRight;
 
       // 🎯 FIX: Saturation ONLY on output, NOT in feedback loop (prevents runaway feedback)
       // Saturation in feedback loop causes infinite buildup and crackling

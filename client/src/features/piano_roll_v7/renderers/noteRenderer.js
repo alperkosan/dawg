@@ -11,6 +11,8 @@ export class PremiumNoteRenderer {
     constructor() {
         this.animationCache = new Map();
         this.gradientCache = new Map();
+        // Clear cache if keyHeight changes (zoom)
+        this.lastKeyHeight = 0;
         // Note animations: noteId -> { type: 'added'|'deleted'|'modified', startTime, duration }
         this.noteAnimations = new Map();
     }
@@ -90,7 +92,7 @@ export class PremiumNoteRenderer {
             console.warn('⚠️ Non-finite gradient coordinates, using fallback color:', { x1, y1, x2, y2 });
             // Return a mock gradient object for compatibility
             return {
-                addColorStop: () => {},
+                addColorStop: () => { },
                 toString: () => fallbackColor
             };
         }
@@ -101,6 +103,7 @@ export class PremiumNoteRenderer {
     renderNote(ctx, note, dimensions, viewport, isSelected = false, isHovered = false, isEraserTarget = false, options = {}) {
         // ✅ OPTIMIZED: Using StyleCache
         const { stepWidth, keyHeight } = dimensions;
+        const lod = options.lod !== undefined ? options.lod : 0; // 0=High, 1=Medium, 2=Low, 3=Minimal
 
         // Calculate note position and size - ensure it fills grid cells completely
         // Debug: Check for undefined values before calculation
@@ -139,11 +142,22 @@ export class PremiumNoteRenderer {
         // visualLength = 1 step means note extends to pattern end but shows as short
         const displayLength = note.visualLength !== undefined ? note.visualLength : note.length;
         const hasExtendedAudio = note.visualLength !== undefined && note.visualLength < note.length;
-        
+
         // Calculate width to fill grid cells completely based on visual length
-        const noteWidthInSteps = Math.round(displayLength * stepWidth);
-        const width = Math.max(Math.round(stepWidth) - 1, noteWidthInSteps - 1); // -1 for grid line visibility
+        const noteWidthInSteps = displayLength * stepWidth;
+        const width = Math.max(Math.round(stepWidth) - 1, Math.round(noteWidthInSteps) - 1); // -1 for grid line visibility
         const height = Math.round(keyHeight) - 1; // -1 for horizontal grid line visibility
+
+        if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(width) || width <= 0 || !Number.isFinite(height) || height <= 0) {
+            console.warn('⚠️ noteRenderer: Non-finite geometry detected', {
+                x,
+                y,
+                width,
+                height,
+                note
+            });
+            return;
+        }
 
         // Skip if note is not visible
         if (x + width < viewport.scrollX || x > viewport.scrollX + viewport.width ||
@@ -241,7 +255,8 @@ export class PremiumNoteRenderer {
         }
 
         // ✅ SUBTLE GLOW EFFECT - Pleasant, minimal feedback
-        if (glowIntensity > 0) {
+        // Skip glow for LOD >= 1 (Medium/Low detail)
+        if (glowIntensity > 0 && lod < 1) {
             const glowAlpha = Math.min(glowIntensity / 6, 1); // Normalize to 0-1
 
             if (animState?.type === 'deleted') {
@@ -259,39 +274,57 @@ export class PremiumNoteRenderer {
             }
         }
 
-        // Create premium gradient
-        const gradient = this.createPremiumGradient(ctx, x, y, width, height, {
+        // Create premium gradient (cached, logic-space 0,0)
+        const gradient = this.createPremiumGradient(ctx, height, {
             hue: baseHue,
             saturation,
             lightness,
             alpha,
             isSelected,
-            isHovered: isEraserTarget ? false : isHovered // Disable normal hover if eraser target
+            isHovered: isEraserTarget ? false : isHovered,
+            lod
         });
 
         // Main note body with subtle 3D effect - aligned to grid
+        // ✅ OPTIMIZATION: Translate to note position so we can use cached local gradient
+        ctx.translate(x, y);
         ctx.fillStyle = gradient;
-        
+
         // ✅ FL STUDIO STYLE: Oval edges for extended audio notes (visualLength < length)
         // This indicates the note extends to pattern end but shows as short
         if (hasExtendedAudio) {
             // Draw with more rounded (oval) edges to indicate extension
             const cornerRadius = Math.min(height / 2, 6); // More rounded = oval shape
-            this.drawRoundedRect(ctx, x, y, width, height, cornerRadius);
+            this.drawRoundedRect(ctx, 0, 0, width, height, cornerRadius);
             ctx.fill();
-            
+
             // Add subtle indicator line on right edge to show it extends
             ctx.strokeStyle = `hsla(${baseHue}, ${saturation}%, ${lightness + 10}%, ${alpha * 0.6})`;
             ctx.lineWidth = 2;
             ctx.beginPath();
-            ctx.moveTo(x + width - 1, y);
-            ctx.lineTo(x + width - 1, y + height);
+            ctx.moveTo(width - 1, 0);
+            ctx.lineTo(width - 1, height);
             ctx.stroke();
+
+            if (width > 12 && height > 10) {
+                // Text drawing still needs save/restore for style, but coordinates are now local
+                ctx.save();
+                ctx.fillStyle = `hsla(${baseHue}, ${saturation}%, ${Math.min(85, lightness + 25)}%, ${alpha})`;
+                ctx.font = `${Math.min(12, Math.max(9, height - 4))}px "Inter", "SF Pro Display", sans-serif`;
+                ctx.textAlign = 'right';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('∞', width - 3, height / 2);
+                ctx.restore();
+            }
         } else {
             // Normal rounded rectangle
-            this.drawRoundedRect(ctx, x, y, width, height, 3);
+            this.drawRoundedRect(ctx, 0, 0, width, height, 3);
             ctx.fill();
         }
+
+        // Restore context (undo translate) to continue with absolute rendering for other parts if needed
+        // OR keep strictly local. Let's start by restoring to prevent side effects on subsequent calls
+        ctx.translate(-x, -y);
 
         // Reset shadow for other elements
         ctx.shadowBlur = 0;
@@ -299,6 +332,7 @@ export class PremiumNoteRenderer {
 
         // Premium border with depth
         // ✅ FL STUDIO STYLE: Dashed border for extended audio notes OR muted notes
+        // Simplify border for LOD >= 2
         if (hasExtendedAudio || isMuted) {
             ctx.save();
             ctx.setLineDash([3, 2]); // Dashed border to indicate extension or mute
@@ -315,7 +349,7 @@ export class PremiumNoteRenderer {
                 isSelected,
                 isHovered,
                 velocity: note.velocity
-            });
+            }, options);
         }
 
         // Velocity indicator (subtle left bar)
@@ -324,11 +358,15 @@ export class PremiumNoteRenderer {
         }
 
         // Premium highlight effect
-        this.renderNoteHighlight(ctx, x, y, width, height, {
-            hue: baseHue,
-            isSelected,
-            isHovered
-        });
+        // Skip highlight for LOD >= 2
+        if (lod < 2) {
+            this.renderNoteHighlight(ctx, x, y, width, height, {
+                hue: baseHue,
+                isSelected,
+                isHovered,
+                lod
+            });
+        }
 
         // Note content (optional pitch/velocity text for large notes)
         if (width > 40 && height > 16) {
@@ -343,22 +381,26 @@ export class PremiumNoteRenderer {
         ctx.restore();
     }
 
-    // Create premium gradient for note fill
-    createPremiumGradient(ctx, x, y, width, height, style) {
-        const cacheKey = `${style.hue}_${style.saturation}_${style.lightness}_${style.isSelected}_${style.isHovered}`;
+    // Create premium gradient for note fill (Cached)
+    createPremiumGradient(ctx, height, style) {
+        // Quantize height to reduce cache misses on fractional zooms
+        const hKey = Math.round(height * 10);
+        const cacheKey = `${hKey}_${style.hue}_${style.saturation}_${style.lightness}_${style.isSelected}_${style.isHovered}`;
 
         if (this.gradientCache.has(cacheKey)) {
             return this.gradientCache.get(cacheKey);
         }
 
-        // Debug: Check for non-finite values before creating gradient
-        if (!isFinite(x) || !isFinite(y) || !isFinite(width) || !isFinite(height)) {
-            console.error('❌ Non-finite values in gradient:', { x, y, width, height });
-            // Return fallback solid color
-            return '#666666';
+        // ✅ LOD OPTIMIZATION: Flat color for LOD >= 2 (Zoomed out)
+        if (style.lod >= 2) {
+            let h = style.hue;
+            let s = style.saturation;
+            let l = style.lightness;
+            return `hsla(${h}, ${s}%, ${l}%, ${style.alpha})`;
         }
 
-        const gradient = this.createSafeLinearGradient(ctx, x, y, x, y + height);
+        // Create gradient at 0,0 relative
+        const gradient = this.createSafeLinearGradient(ctx, 0, 0, 0, height);
 
         let h = style.hue;
         let s = style.saturation;
@@ -386,7 +428,7 @@ export class PremiumNoteRenderer {
     }
 
     // Premium note border with depth
-    renderNoteBorder(ctx, x, y, width, height, style) {
+    renderNoteBorder(ctx, x, y, width, height, style, options = {}) {
         // ✅ OPTIMIZED: Using StyleCache
         const borderHue = style.hue;
         const borderAlpha = style.isSelected ? 0.9 : 0.6;
@@ -405,21 +447,24 @@ export class PremiumNoteRenderer {
         ctx.stroke();
 
         // Refined selection effects - more elegant
+        // Simplify selection for LOD >= 2
         if (style.isSelected) {
             // Subtle outer selection border
-            const accentCool = globalStyleCache.get('--zenith-accent-cool');
-            ctx.strokeStyle = accentCool || 'rgba(59, 130, 246, 0.8)';
+            // FL Studio Style: Red selection border
+            ctx.strokeStyle = 'rgba(255, 0, 0, 0.8)';
             ctx.lineWidth = 2;
             ctx.setLineDash([]);
             this.drawRoundedRect(ctx, x - 1, y - 1, width + 2, height + 2, 3.5);
             ctx.stroke();
 
             // Gentle selection glow
-            const accentCoolFaded = globalStyleCache.get('--zenith-accent-cool-faded');
-            ctx.shadowColor = accentCoolFaded || 'rgba(59, 130, 246, 0.3)';
+            // FL Studio Style: Red selection glow
+            ctx.shadowColor = 'rgba(255, 0, 0, 0.4)';
             ctx.shadowBlur = 4;
-            ctx.shadowOffsetX = 0;
             ctx.shadowOffsetY = 0;
+
+            // Simplify inner effects for LOD >= 1
+            if (options.lod && options.lod >= 1) return;
 
             // Inner accent border
             const textPrimary = globalStyleCache.get('--zenith-text-primary');
@@ -432,8 +477,7 @@ export class PremiumNoteRenderer {
 
             // Minimal corner indicators (only top corners)
             const cornerSize = 4;
-            const accentCoolBright = globalStyleCache.get('--zenith-accent-cool');
-            ctx.fillStyle = accentCoolBright || 'rgba(59, 130, 246, 0.9)';
+            ctx.fillStyle = 'rgba(255, 0, 0, 0.9)';
             // Top-left corner dot
             ctx.fillRect(x - 1, y - 1, cornerSize, 1);
             ctx.fillRect(x - 1, y - 1, 1, cornerSize);
@@ -481,8 +525,10 @@ export class PremiumNoteRenderer {
 
     // Premium highlight effect
     renderNoteHighlight(ctx, x, y, width, height, style) {
+        // LOD Check: minimal simple highlight for LOD 1, none for LOD 2
+
         // Top highlight for all notes
-        const baseHighlight = this.createSafeLinearGradient(ctx,x, y, x, y + height * 0.3);
+        const baseHighlight = this.createSafeLinearGradient(ctx, x, y, x, y + height * 0.3);
         baseHighlight.addColorStop(0, `hsla(${style.hue}, 60%, 85%, 0.2)`);
         baseHighlight.addColorStop(1, `hsla(${style.hue}, 60%, 85%, 0)`);
 
@@ -507,7 +553,7 @@ export class PremiumNoteRenderer {
             ctx.shadowBlur = 0;
 
             // Brighter top highlight for hover
-            const hoverHighlight = this.createSafeLinearGradient(ctx,x, y, x, y + height * 0.4);
+            const hoverHighlight = this.createSafeLinearGradient(ctx, x, y, x, y + height * 0.4);
             hoverHighlight.addColorStop(0, `hsla(${style.hue}, 80%, 95%, 0.4)`);
             hoverHighlight.addColorStop(1, `hsla(${style.hue}, 80%, 95%, 0)`);
 
@@ -544,11 +590,22 @@ export class PremiumNoteRenderer {
 
     // Render multiple notes efficiently
     renderNotes(ctx, notes, dimensions, viewport, selectedNoteIds, hoveredNoteId, activeTool = 'select', dragState = null, snapValue = 1, lod = 0) {
+        // ✅ ZOOM CACHE INVALIDATION
+        if (dimensions.keyHeight !== this.lastKeyHeight) {
+            this.gradientCache.clear();
+            this.lastKeyHeight = dimensions.keyHeight;
+            // console.log('🧹 Gradient cache cleared (Zoom changed)');
+        }
+
         // Sort notes by pitch (render lower notes first for proper layering)
         const sortedNotes = [...notes].sort((a, b) => b.pitch - a.pitch);
 
         // ✅ PHASE 3: Render slide connections first (behind notes)
-        this.renderSlideConnections(ctx, sortedNotes, dimensions, viewport);
+        try {
+            this.renderSlideConnections(ctx, sortedNotes, dimensions, viewport);
+        } catch (e) {
+            console.error('❌ Error rendering slide connections:', e);
+        }
 
         const hideVelocityIndicator = lod >= 2;
 
@@ -597,7 +654,7 @@ export class PremiumNoteRenderer {
                     // ✅ MULTI-NOTE RESIZE: Check if this note is being resized
                     const noteIds = dragState.noteIds || [dragState.noteId];
                     const originalNotes = dragState.originalNotes || new Map([[dragState.noteId, dragState.originalNote]]);
-                    
+
                     if (noteIds.includes(note.id)) {
                         // This note is being resized - apply delta
                         const { deltaTime } = dragState.currentDelta;
@@ -622,58 +679,63 @@ export class PremiumNoteRenderer {
                                 const originalEndTime = original.startTime + resizableLength;
                                 let newStartTime = Math.max(0, original.startTime + deltaTime);
 
-                            if (snapValue > 0) {
-                                newStartTime = Math.max(0, Math.round(newStartTime / snapValue) * snapValue);
-                            }
+                                if (snapValue > 0) {
+                                    newStartTime = Math.max(0, Math.round(newStartTime / snapValue) * snapValue);
+                                }
 
-                            let newVisualLength = Math.max(minLength, originalEndTime - newStartTime);
+                                let newVisualLength = Math.max(minLength, originalEndTime - newStartTime);
 
-                            // ✅ FIX: Snap length to grid as well
-                            if (snapValue > 0) {
-                                newVisualLength = snapToGrid(newVisualLength, snapValue);
-                                // Ensure minimum length after snapping
-                                newVisualLength = Math.max(minLength, newVisualLength);
-                            }
+                                // ✅ FIX: Snap length to grid as well
+                                if (snapValue > 0) {
+                                    newVisualLength = snapToGrid(newVisualLength, snapValue);
+                                    // Ensure minimum length after snapping
+                                    newVisualLength = Math.max(minLength, newVisualLength);
+                                }
 
-                            // ✅ For oval notes: keep original length, only change visualLength
-                            renderNote = {
-                                ...note,
-                                startTime: newStartTime,
-                                visualLength: newVisualLength,
-                                length: isOvalNote ? note.length : newVisualLength
-                            };
-                        } else if (dragState.resizeHandle === 'right') {
-                            const originalStartTime = original.startTime;
-                            const originalEndTime = originalStartTime + resizableLength;
-                            let newEndTime = originalEndTime + deltaTime;
+                                // ✅ For oval notes: keep original length, only change visualLength
+                                renderNote = {
+                                    ...note,
+                                    startTime: newStartTime,
+                                    visualLength: newVisualLength,
+                                    length: isOvalNote ? note.length : newVisualLength
+                                };
+                            } else if (dragState.resizeHandle === 'right') {
+                                const originalStartTime = original.startTime;
+                                const originalEndTime = originalStartTime + resizableLength;
+                                let newEndTime = originalEndTime + deltaTime;
 
-                            if (snapValue > 0) {
-                                newEndTime = Math.max(0, Math.round(newEndTime / snapValue) * snapValue);
-                            }
+                                if (snapValue > 0) {
+                                    newEndTime = Math.max(0, Math.round(newEndTime / snapValue) * snapValue);
+                                }
 
-                            let newVisualLength = Math.max(minLength, newEndTime - originalStartTime);
+                                let newVisualLength = Math.max(minLength, newEndTime - originalStartTime);
 
-                            // ✅ FIX: Snap length to grid as well
-                            if (snapValue > 0) {
-                                newVisualLength = snapToGrid(newVisualLength, snapValue);
-                                // Ensure minimum length after snapping
-                                newVisualLength = Math.max(minLength, newVisualLength);
-                            }
+                                // ✅ FIX: Snap length to grid as well
+                                if (snapValue > 0) {
+                                    newVisualLength = snapToGrid(newVisualLength, snapValue);
+                                    // Ensure minimum length after snapping
+                                    newVisualLength = Math.max(minLength, newVisualLength);
+                                }
 
-                            // ✅ For oval notes: keep original length, only change visualLength
-                            renderNote = {
-                                ...note,
-                                startTime: originalStartTime,
-                                visualLength: newVisualLength,
-                                length: isOvalNote ? note.length : newVisualLength
-                            };
+                                // ✅ For oval notes: keep original length, only change visualLength
+                                renderNote = {
+                                    ...note,
+                                    startTime: originalStartTime,
+                                    visualLength: newVisualLength,
+                                    length: isOvalNote ? note.length : newVisualLength
+                                };
                             }
                         }
                     }
                 }
             }
 
-            this.renderNote(ctx, renderNote, dimensions, viewport, isSelected, isHovered, isEraserTarget, { hideVelocityIndicator });
+            // ✅ FIX: Pass LOD down to single note renderer
+            try {
+                this.renderNote(ctx, renderNote, dimensions, viewport, isSelected, isHovered, isEraserTarget, { hideVelocityIndicator, lod });
+            } catch (e) {
+                console.error(`❌ Error rendering note ${note.id}:`, e);
+            }
         });
     }
 
@@ -684,7 +746,7 @@ export class PremiumNoteRenderer {
         // ✅ FL STUDIO STYLE: Use visualLength for preview display
         const displayLength = note.visualLength !== undefined ? note.visualLength : (note.length || 1);
         const hasExtendedAudio = note.visualLength !== undefined && note.visualLength < note.length;
-        
+
         // Calculate note position and size
         const x = Math.round(note.startTime * stepWidth);
         const y = Math.round((127 - note.pitch) * keyHeight);
@@ -713,7 +775,7 @@ export class PremiumNoteRenderer {
 
         // ✅ FL STUDIO STYLE: Oval edges for extended audio preview notes
         const cornerRadius = hasExtendedAudio ? Math.min(height / 2, 6) : 3;
-        
+
         // Draw preview note body
         ctx.fillStyle = gradient;
         this.drawRoundedRect(ctx, x, y, width, height, cornerRadius);
@@ -726,7 +788,7 @@ export class PremiumNoteRenderer {
         this.drawRoundedRect(ctx, x, y, width, height, cornerRadius);
         ctx.stroke();
         ctx.setLineDash([]); // Reset dash
-        
+
         // ✅ FL STUDIO STYLE: Add indicator line on right edge if extended
         if (hasExtendedAudio) {
             ctx.strokeStyle = `hsla(${baseHue}, 70%, 80%, ${alpha * 0.6})`;
@@ -738,7 +800,7 @@ export class PremiumNoteRenderer {
         }
 
         // Subtle preview highlight
-        const previewHighlight = this.createSafeLinearGradient(ctx,x, y, x, y + height * 0.3);
+        const previewHighlight = this.createSafeLinearGradient(ctx, x, y, x, y + height * 0.3);
         previewHighlight.addColorStop(0, `hsla(${baseHue}, 80%, 90%, 0.3)`);
         previewHighlight.addColorStop(1, `hsla(${baseHue}, 80%, 90%, 0)`);
 
@@ -754,7 +816,7 @@ export class PremiumNoteRenderer {
             ctx.font = '9px Inter, sans-serif';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            ctx.fillText('Preview', x + width/2, y + height/2);
+            ctx.fillText('Preview', x + width / 2, y + height / 2);
         }
 
         ctx.restore();
@@ -845,14 +907,14 @@ export class PremiumNoteRenderer {
         const accentWarm = globalStyleCache.get('--zenith-accent-warm');
 
         // ✅ FL Studio-style: Find notes with slideEnabled
-        const slideNotes = notes.filter(n => 
-            n.slideEnabled === true && 
-            n.slideTargetPitch !== undefined && 
+        const slideNotes = notes.filter(n =>
+            n.slideEnabled === true &&
+            n.slideTargetPitch !== undefined &&
             n.slideTargetPitch !== null &&
             n.slideDuration !== undefined &&
             n.slideDuration > 0
         );
-        
+
         if (slideNotes.length === 0) return;
 
         slideNotes.forEach(note => {
@@ -868,7 +930,7 @@ export class PremiumNoteRenderer {
                     return; // Invalid pitch
                 }
             }
-            
+
             // Ensure targetPitch is a number
             let targetPitch = note.slideTargetPitch;
             if (typeof targetPitch !== 'number') {
@@ -883,15 +945,15 @@ export class PremiumNoteRenderer {
             const startX = note.startTime * stepWidth;
             // Use sourcePitch (already converted to MIDI number) for Y position
             const startY = (127 - sourcePitch) * keyHeight;
-            
+
             // Use visualLength for display length
             const displayLength = note.visualLength !== undefined ? note.visualLength : note.length;
             const noteEndX = startX + (displayLength * stepWidth);
-            
+
             // Slide duration in steps
             const slideDurationSteps = note.slideDuration || 1;
             const slideEndX = noteEndX + (slideDurationSteps * stepWidth);
-            
+
             // Target pitch position (Y coordinate)
             const targetY = (127 - targetPitch) * keyHeight;
 
@@ -928,7 +990,7 @@ export class PremiumNoteRenderer {
             // Draw curved line (bezier curve for smooth visual)
             ctx.beginPath();
             ctx.moveTo(noteEndX, centerY1);
-            
+
             // Control points for smooth curve
             const controlX1 = noteEndX + (slideEndX - noteEndX) * 0.3;
             const controlX2 = slideEndX - (slideEndX - noteEndX) * 0.3;
@@ -942,7 +1004,7 @@ export class PremiumNoteRenderer {
             // Draw arrow head at target pitch position
             const arrowSize = 6;
             const angle = Math.atan2(centerY2 - centerY1, slideEndX - noteEndX);
-            
+
             ctx.save();
             ctx.translate(slideEndX, centerY2);
             ctx.rotate(angle);

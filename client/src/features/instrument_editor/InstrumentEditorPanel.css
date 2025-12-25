@@ -26,7 +26,8 @@
   top: 0;
   right: 0;
   bottom: 0;
-  width: 500px; /* Default width (overridden by inline style) */
+  width: 500px;
+  /* Default width (overridden by inline style) */
   min-width: 500px;
   max-width: 800px;
   background: var(--zenith-bg-secondary, #1a1a1a);
@@ -124,6 +125,7 @@
     opacity: 0;
     transform: translateY(-10px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -509,5 +511,23 @@
 @media (max-width: 768px) {
   .instrument-editor-panel {
     width: 100%;
+    min-width: 0;
+    /* ✅ Fix mobile overflow */
+  }
+
+  .instrument-editor-panel__tabs {
+    overflow-x: auto;
+    /* ✅ Allow tabs to scroll */
+  }
+
+  .instrument-editor-panel__title {
+    overflow: hidden;
+  }
+
+  .instrument-editor-panel__name-primary {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 150px;
   }
 }

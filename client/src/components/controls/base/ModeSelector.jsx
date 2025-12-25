@@ -35,7 +35,8 @@ export const ModeSelector = ({
   const containerRef = useRef(null);
 
   // Support both prop names for backwards compatibility
-  const currentMode = selectedMode || activeMode;
+  // ✅ FIX: Use nullish coalescing to handle 0 as valid value
+  const currentMode = selectedMode !== undefined ? selectedMode : activeMode;
   const handleChange = onSelectMode || onChange;
 
   if (!modes || modes.length === 0) {
@@ -61,7 +62,8 @@ export const ModeSelector = ({
 
   // Calculate indicator position based on actual button positions
   useEffect(() => {
-    if (!currentMode || !buttonRefs.current[currentMode] || !containerRef.current) {
+    // ✅ FIX: Use strict equality to handle 0 as valid value
+    if (currentMode === null || currentMode === undefined || !buttonRefs.current[currentMode] || !containerRef.current) {
       return;
     }
 
@@ -103,7 +105,8 @@ export const ModeSelector = ({
   // Update indicator on window resize
   useEffect(() => {
     const updateIndicator = () => {
-      if (!currentMode || !buttonRefs.current[currentMode] || !containerRef.current) {
+      // ✅ FIX: Use strict equality to handle 0 as valid value
+      if (currentMode === null || currentMode === undefined || !buttonRefs.current[currentMode] || !containerRef.current) {
         return;
       }
 
@@ -154,7 +157,8 @@ export const ModeSelector = ({
       aria-label="Mode selection"
     >
       {/* Active indicator (animated underline/background) */}
-      {currentMode && indicatorStyle.left !== undefined && (
+      {/* ✅ FIX: Use strict equality to handle 0 as valid value */}
+      {(currentMode !== null && currentMode !== undefined) && indicatorStyle.left !== undefined && (
         <div style={indicatorStyle} />
       )}
 
@@ -172,7 +176,7 @@ export const ModeSelector = ({
             onMouseEnter={() => setHoveredMode(mode.id)}
             onMouseLeave={() => setHoveredMode(null)}
             onKeyDown={(e) => handleKeyDown(e, mode.id)}
-            title={mode.description}
+            title={mode.description || (mode.label || mode.name) || undefined}
             role="radio"
             aria-checked={isActive}
             style={{
@@ -211,7 +215,7 @@ export const ModeSelector = ({
                 {mode.icon}
               </span>
             )}
-            {!compact && (
+            {!compact && (mode.label || mode.name) && (
               <span
                 className="mode-label"
                 style={{
@@ -221,7 +225,14 @@ export const ModeSelector = ({
                   minWidth: 0,
                 }}
               >
+                {/* ✅ FIX: Use label if available, otherwise name. Never use mode.id as fallback */}
                 {mode.label || mode.name}
+              </span>
+            )}
+            {/* ✅ FIX: Show mode name in compact mode too, but only if name exists */}
+            {compact && mode.name && (
+              <span className="mode-label-compact" style={{ fontSize: '9px', opacity: 0.8 }}>
+                {mode.name}
               </span>
             )}
           </button>
@@ -229,7 +240,7 @@ export const ModeSelector = ({
       })}
 
       {/* Tooltip for hovered mode */}
-      {hoveredMode && modes.find(m => m.id === hoveredMode)?.description && (
+      {(hoveredMode !== null && hoveredMode !== undefined) && modes.find(m => m.id === hoveredMode)?.description && (
         <div
           className="mode-tooltip"
           style={{
@@ -247,7 +258,7 @@ export const ModeSelector = ({
             pointerEvents: 'none',
           }}
         >
-          {modes.find(m => m.id === hoveredMode).description}
+          {modes.find(m => m.id === hoveredMode)?.description}
         </div>
       )}
     </div>

@@ -229,6 +229,67 @@ const LimiterUI_V2 = ({ trackId, effect, effectNode, definition }) => {
   // Mixer store
   const { handleMixerEffectChange } = useMixerStore.getState();
 
+  // Metering state
+  const [gainReduction, setGainReduction] = useState(0);
+  const [lufs, setLufs] = useState(-144);
+  const [lra, setLra] = useState(0);
+  const [peak, setPeak] = useState(-144);
+  const grHistoryRef = useRef([]);
+  const maxHistorySize = 400;
+
+  // Audio plugin for metering
+  const { plugin } = useAudioPlugin(trackId, effect.id, {
+    fftSize: 2048,
+    updateMetrics: false
+  });
+
+  // Listen to worklet messages for metering
+  useEffect(() => {
+    const audioNode = plugin?.audioNode?.workletNode;
+    if (!audioNode?.port) return;
+
+    const handleMessage = (event) => {
+      const { type, data } = event.data;
+      if (type === 'metering' && data) {
+        if (typeof data.grPeak === 'number' && isFinite(data.grPeak)) {
+          const gr = Math.max(0, Math.min(60, -data.grPeak)); // Convert to positive dB
+          setGainReduction(gr);
+          
+          // Add to GR history
+          grHistoryRef.current.push({
+            gr: gr,
+            timestamp: performance.now()
+          });
+          
+          // Trim history
+          if (grHistoryRef.current.length > maxHistorySize) {
+            grHistoryRef.current.shift();
+          }
+        }
+        
+        if (typeof data.lufs === 'number' && isFinite(data.lufs)) {
+          setLufs(data.lufs);
+        }
+        
+        if (typeof data.lra === 'number' && isFinite(data.lra)) {
+          setLra(data.lra);
+        }
+        
+        if (typeof data.peak === 'number' && isFinite(data.peak)) {
+          setPeak(data.peak);
+        }
+      }
+    };
+
+    audioNode.port.onmessage = handleMessage;
+
+    return () => {
+      if (audioNode?.port) {
+        audioNode.port.onmessage = null;
+      }
+    };
+  }, [plugin]);
+
   // Ghost values
   const ghostCeiling = useGhostValue(localCeiling, 400);
   const ghostRelease = useGhostValue(localRelease, 400);
@@ -447,6 +508,143 @@ const LimiterUI_V2 = ({ trackId, effect, effectNode, definition }) => {
 
         sidePanel={
           <>
+            {/* GR Meter */}
+            <div 
+              className="rounded-xl p-4 mb-4"
+              style={{
+                background: `linear-gradient(135deg, rgba(0, 0, 0, 0.5) 0%, ${categoryColors.accent}20 100%)`,
+                border: `1px solid ${categoryColors.primary}1A`,
+              }}
+            >
+              <div 
+                className="text-[9px] uppercase tracking-wider mb-3 font-bold"
+                style={{ color: `${categoryColors.secondary}B3` }}
+              >
+                Gain Reduction
+              </div>
+              <div className="relative h-32 mb-2">
+                {/* GR Meter Background */}
+                <div className="absolute inset-0 rounded" style={{ background: 'rgba(0, 0, 0, 0.3)' }}>
+                  {/* Grid lines */}
+                  {[0, 10, 20, 30, 40, 50, 60].map((db) => (
+                    <div
+                      key={db}
+                      className="absolute w-full border-t"
+                      style={{
+                        top: `${100 - (db / 60) * 100}%`,
+                        borderColor: `${categoryColors.primary}20`
+                      }}
+                    />
+                  ))}
+                  
+                  {/* GR Bar */}
+                  <div
+                    className="absolute bottom-0 left-0 rounded transition-all duration-75"
+                    style={{
+                      width: '100%',
+                      height: `${Math.min(100, (gainReduction / 60) * 100)}%`,
+                      background: gainReduction > 30 
+                        ? `linear-gradient(to top, ${categoryColors.accent}, #E74C3C)`
+                        : `linear-gradient(to top, ${categoryColors.primary}, ${categoryColors.accent})`,
+                      boxShadow: `0 0 10px ${categoryColors.primary}40`
+                    }}
+                  />
+                  
+                  {/* GR History Graph */}
+                  {grHistoryRef.current.length > 10 && (
+                    <canvas
+                      ref={(canvas) => {
+                        if (canvas && grHistoryRef.current.length > 0) {
+                          const ctx = canvas.getContext('2d');
+                          const width = canvas.width = canvas.offsetWidth;
+                          const height = canvas.height = canvas.offsetHeight;
+                          
+                          ctx.clearRect(0, 0, width, height);
+                          ctx.strokeStyle = categoryColors.accent;
+                          ctx.lineWidth = 2;
+                          ctx.beginPath();
+                          
+                          const history = grHistoryRef.current;
+                          const pointsPerPixel = Math.max(1, Math.floor(history.length / width));
+                          
+                          for (let x = 0; x < width; x++) {
+                            const idx = Math.min(history.length - 1, Math.floor(x * pointsPerPixel));
+                            const gr = history[idx].gr;
+                            const y = height - (gr / 60) * height;
+                            
+                            if (x === 0) ctx.moveTo(x, y);
+                            else ctx.lineTo(x, y);
+                          }
+                          
+                          ctx.stroke();
+                        }
+                      }}
+                      className="absolute inset-0 w-full h-full"
+                    />
+                  )}
+                  
+                  {/* GR Value Display */}
+                  <div className="absolute top-2 left-2">
+                    <div className="text-2xl font-bold font-mono" style={{ color: categoryColors.primary }}>
+                      {gainReduction.toFixed(1)}
+                    </div>
+                    <div className="text-[8px] text-white/50">dB</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Loudness Metering */}
+            <div 
+              className="rounded-xl p-4 mb-4"
+              style={{
+                background: `linear-gradient(135deg, rgba(0, 0, 0, 0.5) 0%, ${categoryColors.accent}20 100%)`,
+                border: `1px solid ${categoryColors.primary}1A`,
+              }}
+            >
+              <div 
+                className="text-[9px] uppercase tracking-wider mb-3 font-bold"
+                style={{ color: `${categoryColors.secondary}B3` }}
+              >
+                Loudness Metering
+              </div>
+              <div className="space-y-3">
+                <div>
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="text-[10px] text-white/60">LUFS</span>
+                    <span className="text-lg font-bold font-mono" style={{ color: categoryColors.primary }}>
+                      {lufs > -144 ? lufs.toFixed(1) : '---'}
+                    </span>
+                  </div>
+                  <div className="h-2 rounded-full overflow-hidden" style={{ background: 'rgba(0, 0, 0, 0.3)' }}>
+                    <div
+                      className="h-full transition-all duration-100"
+                      style={{
+                        width: `${Math.min(100, Math.max(0, ((lufs + 60) / 60) * 100))}%`,
+                        background: lufs > -14 
+                          ? `linear-gradient(to right, ${categoryColors.primary}, #E74C3C)`
+                          : lufs > -23
+                          ? `linear-gradient(to right, ${categoryColors.accent}, ${categoryColors.primary})`
+                          : categoryColors.accent
+                      }}
+                    />
+                  </div>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] text-white/60">LRA</span>
+                  <span className="text-[12px] font-mono" style={{ color: categoryColors.primary }}>
+                    {lra > 0 ? lra.toFixed(1) : '---'} LU
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] text-white/60">Peak</span>
+                  <span className="text-[12px] font-mono" style={{ color: categoryColors.primary }}>
+                    {peak > -144 ? peak.toFixed(1) : '---'} LUFS
+                  </span>
+                </div>
+              </div>
+            </div>
+
             {/* Stats Display */}
             <div 
               className="rounded-xl p-4"

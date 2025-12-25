@@ -163,8 +163,11 @@ export class AutomationManager {
 
         // ✅ CRITICAL: Also update pattern store for PlaybackManager
         // PlaybackManager reads from pattern.ccLanes during playback
+        // ✅ FIX: Use queueMicrotask to avoid React render-phase state updates
         const ccLanesData = lanes.map(lane => lane.toJSON ? lane.toJSON() : lane);
-        useArrangementStore.getState().updatePatternCCLanes(patternId, ccLanesData);
+        queueMicrotask(() => {
+            useArrangementStore.getState().updatePatternCCLanes(patternId, ccLanesData);
+        });
 
         this.notifyListeners({ type: 'lanesSet', key, lanes, patternId, instrumentId });
     }

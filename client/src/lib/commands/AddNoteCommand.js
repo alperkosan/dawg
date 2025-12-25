@@ -9,22 +9,44 @@ import { calculatePatternLoopLength } from '../utils/patternUtils.js';
  */
 export class AddNoteCommand extends Command {
   /**
-   * @param {string} instrumentId - Notanın ekleneceği enstrümanın ID'si.
-   * @param {number} step - Notanın ekleneceği adım (zaman).
+   * @param {string|object} instrumentIdOrNote - Notanın ekleneceği enstrümanın ID'si VEYA hazır nota objesi (Piano Roll için).
+   * @param {number|function} stepOrAddFn - Notanın ekleneceği adım (zaman) VEYA add fonksiyonu (Piano Roll için).
+   * @param {number|function} fixedLengthOrDeleteFn - Sabit nota uzunluğu VEYA delete fonksiyonu (Piano Roll için).
    */
-  constructor(instrumentId, step) {
+  constructor(instrumentIdOrNote, stepOrAddFn, fixedLengthOrDeleteFn = null) {
     super();
-    this.instrumentId = instrumentId;
-    this.step = step;
-    // Bu nota, execute() metodu çalıştığında oluşturulacak ve saklanacaktır.
-    // Bu, undo işlemi için gereklidir.
-    this.note = null; 
+
+    // ✅ FIX: Detect Piano Roll mode (note object passed directly)
+    if (typeof instrumentIdOrNote === 'object' && instrumentIdOrNote !== null) {
+      // Piano Roll mode: note is already fully formed
+      this.isPianoRollMode = true;
+      this.note = instrumentIdOrNote;
+      this.addFn = stepOrAddFn;
+      this.deleteFn = fixedLengthOrDeleteFn;
+      // No need to set instrumentId, step, fixedLength
+    } else {
+      // Step Sequencer mode: construct note from parameters
+      this.isPianoRollMode = false;
+      this.instrumentId = instrumentIdOrNote;
+      this.step = stepOrAddFn;
+      this.fixedLength = fixedLengthOrDeleteFn;
+      this.note = null; // Will be created in execute()
+    }
   }
 
   /**
    * Notayı oluşturur, state'i günceller ve ses motorunu yeniden zamanlar.
    */
   execute() {
+    // ✅ FIX: Piano Roll mode - note is already created, just add it
+    if (this.isPianoRollMode) {
+      if (this.addFn) {
+        this.addFn(this.note);
+      }
+      return;
+    }
+
+    // ✅ Step Sequencer mode - create note with oval behavior
     const activePatternId = useArrangementStore.getState().activePatternId;
     if (!activePatternId) return;
 
@@ -35,9 +57,12 @@ export class AddNoteCommand extends Command {
     const currentNotes = activePattern.data[this.instrumentId] || [];
 
     // ✅ FL STUDIO STYLE: Calculate pattern length and extend note to pattern length
-    // Get pattern length in steps (default to 64 if no notes exist)
-    const patternLengthInSteps = calculatePatternLoopLength(activePattern) || 64;
-    
+    // Prefer explicit pattern length, otherwise fall back to calculated value
+    const patternLengthInSteps =
+      (typeof activePattern.length === 'number' && activePattern.length > 0)
+        ? activePattern.length
+        : (calculatePatternLoopLength(activePattern) || 64);
+
     // Convert step length to duration string
     // 1 step = 1/16 note, so patternLengthInSteps steps = patternLengthInSteps/16 bars
     // But duration is relative to the beat, so we need to calculate in beats
@@ -68,7 +93,7 @@ export class AddNoteCommand extends Command {
       // Use pitch and velocity from the first existing note
       const firstNote = currentNotes[0];
       defaultPitch = firstNote.pitch || 'C4';
-      
+
       // ✅ FIX: Normalize velocity to 0-127 range
       // Handle both 0-1 normalized and 0-127 MIDI formats
       if (firstNote.velocity !== undefined) {
@@ -88,30 +113,30 @@ export class AddNoteCommand extends Command {
         velocity: defaultVelocity
       });
     }
-    
-    // ✅ FL STUDIO STYLE: ALL new notes extend to full pattern length
-    // Calculate duration from note start to pattern end
+
+    const gateLengthInSteps = 1;
+    const audioDuration = null;
     const noteStartStep = this.step;
-    const noteLengthInSteps = patternLengthInSteps - noteStartStep;
-    const defaultDuration = stepsToDuration(Math.max(1, noteLengthInSteps));
-    
-    console.log(`📝 AddNoteCommand: New note for ${this.instrumentId}, extending to pattern length:`, {
+
+    // ✅ FIX: Use fixed length if provided (for fill pattern), otherwise use oval note logic
+    let ovalLengthInSteps;
+    if (this.fixedLength !== null && this.fixedLength > 0) {
+      // Fill pattern: Use fixed length (e.g., 4 steps)
+      ovalLengthInSteps = this.fixedLength;
+    } else {
+      // Normal sequencer: Extend to pattern end (oval note behavior)
+      const remainingSteps = patternLengthInSteps - noteStartStep;
+      ovalLengthInSteps = remainingSteps > 0
+        ? Math.max(gateLengthInSteps, remainingSteps)
+        : gateLengthInSteps; // If at or past pattern end, use gate length
+    }
+
+    console.log(`📝 AddNoteCommand: New note for ${this.instrumentId} with 1-step gate`, {
       patternLengthInSteps,
       noteStartStep,
-      noteLengthInSteps,
-      duration: defaultDuration
+      gateLengthInSteps,
+      ovalLengthInSteps
     });
-
-    // ✅ FL STUDIO STYLE: Visual length vs Audio duration
-    // Visual: 1 step (short, oval edges indicate it extends)
-    // Audio: Pattern length (extends to pattern end for full playback)
-    // ALL NEW NOTES should be oval (visualLength = 1) unless explicitly resized
-    
-    // Calculate audio length in steps directly (more accurate than converting duration string)
-    // noteStartStep already defined above, reuse it
-    const audioLengthInSteps = patternLengthInSteps - noteStartStep;
-    
-    const audioDuration = defaultDuration; // Keep duration string for legacy compatibility
 
     // Geri alma (undo) işlemi için notayı burada oluşturup sınıf içinde saklıyoruz.
     this.note = {
@@ -119,9 +144,9 @@ export class AddNoteCommand extends Command {
       time: this.step,
       pitch: defaultPitch,
       velocity: defaultVelocity,
-      duration: audioDuration, // Audio duration (for playback - legacy format)
-      length: audioLengthInSteps, // ✅ Audio length in steps (pattern length for all new notes)
-      visualLength: 1 // ✅ FL STUDIO STYLE: All new notes are oval (1 step visual, full pattern audio)
+      duration: audioDuration,
+      length: ovalLengthInSteps,
+      visualLength: gateLengthInSteps
     };
 
     const newNotes = [...currentNotes, this.note];
@@ -146,6 +171,15 @@ export class AddNoteCommand extends Command {
    * Eklenen notayı state'ten kaldırır ve ses motorunu yeniden zamanlar.
    */
   undo() {
+    // ✅ FIX: Piano Roll mode
+    if (this.isPianoRollMode) {
+      if (this.deleteFn) {
+        this.deleteFn([this.note.id]);
+      }
+      return;
+    }
+
+    // ✅ Step Sequencer mode
     const activePatternId = useArrangementStore.getState().activePatternId;
     if (!activePatternId || !this.note) return;
 
@@ -167,6 +201,9 @@ export class AddNoteCommand extends Command {
    * @returns {string}
    */
   getDescription() {
+    if (this.isPianoRollMode) {
+      return `Add note at step ${this.note.startTime || this.note.time}`;
+    }
     return `Add note to instrument ${this.instrumentId} at step ${this.step}`;
   }
 }

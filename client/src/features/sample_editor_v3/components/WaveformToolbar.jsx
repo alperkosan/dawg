@@ -1,5 +1,5 @@
 import React from 'react';
-import { MousePointer, Scissors, Trash2, Crop } from 'lucide-react';
+import { MousePointer, Scissors, Repeat, Trash2, Crop } from 'lucide-react';
 
 const ToolButton = ({ label, icon: Icon, isActive, onClick }) => (
   <button onClick={onClick} className={`workbench-tool ${isActive ? 'active' : ''}`} title={label}>
@@ -14,6 +14,7 @@ export const WaveformToolbar = ({ activeTool, onToolChange, onAction }) => {
       <div className="waveform-toolbar__group">
         <ToolButton label="Select" icon={MousePointer} isActive={activeTool === 'select'} onClick={() => onToolChange('select')} />
         <ToolButton label="Slice" icon={Scissors} isActive={activeTool === 'slice'} onClick={() => onToolChange('slice')} />
+        <ToolButton label="Loop" icon={Repeat} isActive={activeTool === 'loop'} onClick={() => onToolChange('loop')} />
       </div>
       <div className="waveform-toolbar__group">
         <button className="workbench-action-btn" onClick={() => onAction('trim')} title="Seçili alanı kırp">

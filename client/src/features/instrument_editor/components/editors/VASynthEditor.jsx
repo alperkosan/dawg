@@ -13,6 +13,7 @@ import React, { useCallback, useEffect, useState, useRef, useMemo } from 'react'
 import useInstrumentEditorStore from '../../../../store/useInstrumentEditorStore';
 import { getPreviewManager } from '@/lib/audio/preview';
 import { AudioContextService } from '@/lib/services/AudioContextService';
+import { AudioEngineGlobal } from '@/lib/core/AudioEngineGlobal';
 import { getPreset } from '@/lib/audio/synth/presets';
 import { Knob, Slider } from '@/components/controls';
 import './VASynthEditor.css';
@@ -95,15 +96,15 @@ const VASynthEditor = ({ instrumentData: initialData }) => {
     console.log('🔄 useMemo deps changed - instrumentData.oscillators:', instrumentData.oscillators);
     const result = Array.isArray(instrumentData.oscillators)
       ? instrumentData.oscillators.map((osc, index) => ({
+        ...defaultOscillators[index],
+        ...osc,
+      }))
+      : (Array.isArray(presetData?.oscillators)
+        ? presetData.oscillators.map((osc, index) => ({
           ...defaultOscillators[index],
           ...osc,
         }))
-      : (Array.isArray(presetData?.oscillators)
-          ? presetData.oscillators.map((osc, index) => ({
-              ...defaultOscillators[index],
-              ...osc,
-            }))
-          : defaultOscillators);
+        : defaultOscillators);
     console.log('🔄 Oscillators recomputed:', result);
     return result;
   }, [instrumentData.oscillators, presetData?.oscillators]);
@@ -119,7 +120,7 @@ const VASynthEditor = ({ instrumentData: initialData }) => {
 
   // Setup PreviewManager with current instrument (only when instrument ID changes)
   useEffect(() => {
-    const audioEngine = AudioContextService.getAudioEngine();
+    const audioEngine = AudioEngineGlobal.get();
     if (audioEngine?.audioContext && instrumentData) {
       // ✅ FX CHAIN: Pass audioEngine to PreviewManager for mixer routing
       const previewManager = getPreviewManager(audioEngine.audioContext, audioEngine);
@@ -135,7 +136,7 @@ const VASynthEditor = ({ instrumentData: initialData }) => {
     updateParameter(path, value);
 
     // 2. Update audio engine DIRECTLY (bypassing store->engine chain)
-    const audioEngine = AudioContextService.getAudioEngine();
+    const audioEngine = AudioEngineGlobal.get();
     if (audioEngine && instrumentData.id) {
       const instrument = audioEngine.instruments.get(instrumentData.id);
       if (instrument && typeof instrument.updateParameters === 'function') {
@@ -175,9 +176,9 @@ const VASynthEditor = ({ instrumentData: initialData }) => {
         console.log('✅ VASynth parameter updated (direct):', path, value);
       }
     }
-  // ✅ FIX: Only depend on stable values, not derived state
-  // oscillators/filter/etc are derived from instrumentData and change every render
-  // We read fresh values from store inside the callback, so no need for deps
+    // ✅ FIX: Only depend on stable values, not derived state
+    // oscillators/filter/etc are derived from instrumentData and change every render
+    // We read fresh values from store inside the callback, so no need for deps
   }, [updateParameter, instrumentData.id]);
 
   // Preview keyboard handlers
@@ -196,7 +197,7 @@ const VASynthEditor = ({ instrumentData: initialData }) => {
       // Stop only the last active note if available
       if (activeNote) {
         // Convert 'C4' style to MIDI locally
-        const map = { 'C':0,'C#':1,'D':2,'D#':3,'E':4,'F':5,'F#':6,'G':7,'G#':8,'A':9,'A#':10,'B':11 };
+        const map = { 'C': 0, 'C#': 1, 'D': 2, 'D#': 3, 'E': 4, 'F': 5, 'F#': 6, 'G': 7, 'G#': 8, 'A': 9, 'A#': 10, 'B': 11 };
         const name = activeNote.replace(/[0-9-]/g, '');
         const octave = parseInt(activeNote.replace(/[^0-9-]/g, ''), 10) || 4;
         const midi = (octave + 1) * 12 + (map[name] ?? 0);
@@ -258,7 +259,7 @@ const VASynthEditor = ({ instrumentData: initialData }) => {
 
   // Setup oscilloscope when audio engine is available
   useEffect(() => {
-    const audioEngine = AudioContextService.getAudioEngine();
+    const audioEngine = AudioEngineGlobal.get();
     if (!audioEngine?.audioContext || !canvasRef.current) return;
 
     // Create analyser

@@ -1,4 +1,190 @@
+mod graph;
+mod synth;
+mod filters;
+mod sampler;
+pub mod envelope;
+pub mod effects;
+pub use graph::AudioGraph;
+use crate::graph::AudioNode;
+
 use wasm_bindgen::prelude::*;
+
+// Raw import with valid module path to appease browser loader
+#[link(wasm_import_module = "./dawg-utils.js")]
+extern "C" {
+    fn host_log(ptr: *const u8, len: usize);
+}
+
+// Helper for logging (Nuclear Option)
+fn worker_log(s: &str) {
+    unsafe { host_log(s.as_ptr(), s.len()); }
+}
+
+// Enable better error messages in Wasm panics
+#[wasm_bindgen]
+pub fn set_panic_hook() {
+    #[cfg(feature = "console_error_panic_hook")]
+    console_error_panic_hook::set_once();
+}
+
+// ============================================
+// TRANSPORT SYSTEM (Sample-Accurate Clock)
+// ============================================
+
+#[wasm_bindgen]
+#[derive(Clone, Copy)]
+pub struct Transport {
+    pub is_playing: bool,
+    pub sample_rate: f32,
+    pub bpm: f32,
+    pub current_sample: u64, // Absolute sample position
+    pub ppq: u32,            // Pulses per quarter note (usually 96)
+    
+    // Derived values for quick calculation
+    samples_per_beat: f32,
+    samples_per_tick: f32,
+
+    // Loop support
+    pub loop_enabled: bool,
+    pub loop_start_tick: f32,
+    pub loop_end_tick: f32,
+}
+
+#[wasm_bindgen]
+impl Transport {
+    #[wasm_bindgen(constructor)]
+    pub fn new(sample_rate: f32) -> Transport {
+        let mut t = Transport {
+            is_playing: false,
+            sample_rate,
+            bpm: 120.0,
+            current_sample: 0,
+            ppq: 96,
+            samples_per_beat: 0.0,
+            samples_per_tick: 0.0,
+            loop_enabled: false,
+            loop_start_tick: 0.0,
+            loop_end_tick: 0.0,
+        };
+        t.recalculate_timing();
+        t
+    }
+
+    pub fn set_bpm(&mut self, bpm: f32) {
+        if bpm > 0.0 {
+            self.bpm = bpm;
+            self.recalculate_timing();
+        }
+    }
+
+    pub fn set_sample_rate(&mut self, sample_rate: f32) {
+        if sample_rate > 0.0 {
+            self.sample_rate = sample_rate;
+            self.recalculate_timing();
+        }
+    }
+
+    pub fn play(&mut self) {
+        self.is_playing = true;
+    }
+
+    pub fn stop(&mut self) {
+        self.is_playing = false;
+        self.current_sample = 0;
+    }
+
+    pub fn pause(&mut self) {
+        self.is_playing = false;
+    }
+
+    /// Advance time by N samples with Looping support
+    pub fn advance(&mut self, samples: u64) {
+        if self.is_playing {
+            self.current_sample += samples;
+
+            // Check Loop
+            if self.loop_enabled && self.loop_end_tick > self.loop_start_tick {
+                let loop_end_sample = (self.loop_end_tick * self.samples_per_tick) as u64;
+                
+                if self.current_sample >= loop_end_sample {
+                     let loop_start_sample = (self.loop_start_tick * self.samples_per_tick) as u64;
+                     let loop_len = loop_end_sample - loop_start_sample;
+                     if loop_len > 0 {
+                         // Wrap carefully
+                         let overshoot = self.current_sample - loop_end_sample;
+                         self.current_sample = loop_start_sample + (overshoot % loop_len);
+                     }
+                }
+            }
+        }
+    }
+
+    pub fn set_loop(&mut self, enabled: bool, start_tick: f32, end_tick: f32) {
+        self.loop_enabled = enabled;
+        self.loop_start_tick = start_tick;
+        self.loop_end_tick = end_tick;
+    }
+
+    /// Set absolute position (seek)
+    pub fn set_position_samples(&mut self, samples: u64) {
+        self.current_sample = samples;
+    }
+
+    // --- Queries ---
+
+    pub fn get_current_time(&self) -> f64 {
+        self.current_sample as f64 / self.sample_rate as f64
+    }
+
+    pub fn get_current_beat(&self) -> f64 {
+        self.current_sample as f64 / self.samples_per_beat as f64
+    }
+
+    pub fn get_current_tick(&self) -> f64 {
+        self.current_sample as f64 / self.samples_per_tick as f64
+    }
+
+    // --- Internals ---
+
+    fn recalculate_timing(&mut self) {
+        // Samples per minute = sample_rate * 60
+        // Samples per beat = (sample_rate * 60) / bpm
+        self.samples_per_beat = (self.sample_rate * 60.0) / self.bpm;
+        self.samples_per_tick = self.samples_per_beat / self.ppq as f32;
+    }
+}
+
+// ============================================
+// SHARED MEMORY STATE (SAB Layout)
+// ============================================
+
+// SAB Layout (Int32Array / Float32Array views)
+// We use a single buffer, but interpret parts as Int32 (State) and Float32 (Params)
+// Index 0-15: Control Flags (Int32)
+// Index 16-31: Parameters (Float32)
+
+#[wasm_bindgen]
+pub struct SharedAudioState;
+
+#[wasm_bindgen]
+impl SharedAudioState {
+    // --- Int32 Indices ---
+    pub fn idx_play_state() -> usize { 0 }       // 0: Stop, 1: Play, 2: Pause
+    pub fn idx_msg_counter() -> usize { 1 }      // Increment to signal new command
+    pub fn idx_seek_trigger() -> usize { 2 }     // 1 = Seek Requested
+    
+    // --- Float32 Indices ---
+    pub fn idx_bpm() -> usize { 16 }             // Tempo
+    pub fn idx_position_samples() -> usize { 17 } // Current Position in Samples (High precision handled via u64 in Transport, but sync via float for UI)
+    pub fn idx_position_ticks() -> usize { 18 }   // Current Position in Ticks
+    pub fn idx_sample_rate() -> usize { 19 } 
+    pub fn idx_seek_target() -> usize { 20 }      // Target position in Ticks (Float32)
+    
+    // Loop Params
+    pub fn idx_loop_enabled() -> usize { 21 }     // 1.0 = true
+    pub fn idx_loop_start() -> usize { 22 }       // Ticks
+    pub fn idx_loop_end() -> usize { 23 }         // Ticks
+}
 
 // ============================================
 // BIQUAD FILTER (3-band EQ core)
@@ -364,6 +550,17 @@ struct ChannelStrip {
     // Compression parameters (configurable)
     comp_threshold: f32,  // in dB
     comp_ratio: f32,
+
+    // Dynamic Inserts
+    inserts: Vec<Box<dyn AudioNode + Send>>,
+
+    // Scratch buffers for effect processing
+    temp_l: Vec<f32>,
+    temp_r: Vec<f32>,
+
+    // Metering
+    peak_l: f32,
+    peak_r: f32,
 }
 
 impl ChannelStrip {
@@ -381,18 +578,116 @@ impl ChannelStrip {
             comp_active: false,
             comp_threshold: -12.0,  // Default: -12dB
             comp_ratio: 4.0,        // Default: 4:1
+            inserts: Vec::new(),
+            temp_l: vec![0.0; 1024], // Pre-allocate enough for standard block size
+            temp_r: vec![0.0; 1024],
+            peak_l: 0.0,
+            peak_r: 0.0,
         }
     }
 
-    /// Process stereo sample through channel strip
-    #[inline]
-    fn process(&mut self, sample_l: f32, sample_r: f32, _sample_rate: f32) -> (f32, f32) {
+    /// Process stereo block through channel strip
+    fn process_block(
+        &mut self, 
+        input_l: &[f32], 
+        input_r: &[f32], 
+        output_l: &mut [f32], 
+        output_r: &mut [f32], 
+        sample_rate: f32
+    ) {
         if self.mute {
-            return (0.0, 0.0);
+            for x in output_l.iter_mut() { *x = 0.0; }
+            for x in output_r.iter_mut() { *x = 0.0; }
+            return;
         }
 
-        // 🧪 COMPLETE BYPASS - Just pass through
-        (sample_l, sample_r)
+        // Copy input to output (start point)
+        // Note: we assume output_l/r are sized correctly
+        let len = output_l.len().min(input_l.len());
+        for i in 0..len {
+            output_l[i] = input_l[i];
+            output_r[i] = input_r[i];
+        }
+
+        // 0. Inserts (Dynamic Routing)
+        if !self.inserts.is_empty() {
+            // Resize temp buffers if needed
+            if self.temp_l.len() < len { self.temp_l.resize(len, 0.0); }
+            if self.temp_r.len() < len { self.temp_r.resize(len, 0.0); }
+
+            for (_i, _insert) in self.inserts.iter_mut().enumerate() {
+                 // BYPASS INSERTS AS REQUESTED BY USER
+                 /*
+                 // Input is current output
+                 let inputs = [&output_l[0..len], &output_r[0..len]];
+                 
+                 {
+                     let mut outputs = [&mut self.temp_l[0..len], &mut self.temp_r[0..len]];
+                     insert.process(&inputs, &mut outputs);
+                 }
+                 
+                 // Copy result back to output_l/r
+                 output_l[0..len].copy_from_slice(&self.temp_l[0..len]);
+                 output_r[0..len].copy_from_slice(&self.temp_r[0..len]);
+                 */
+            }
+        }
+
+        // 1. EQ
+        if self.eq_active {
+            for i in 0..len {
+                output_l[i] = self.eq_l.process(output_l[i]);
+                output_r[i] = self.eq_r.process(output_r[i]);
+            }
+        }
+
+        // 2. Compression
+        if self.comp_active {
+            for i in 0..len {
+                let l = output_l[i];
+                let r = output_r[i];
+                let gain_reduction = self.process_compression(l, r, self.comp_threshold, self.comp_ratio, sample_rate);
+                output_l[i] *= gain_reduction;
+                output_r[i] *= gain_reduction;
+            }
+        }
+
+        // 3. Gain & Pan
+        let mut pan_gain_l = 1.0;
+        let mut pan_gain_r = 1.0;
+        if self.pan != 0.0 {
+            let p_norm = (self.pan + 1.0) * 0.25 * std::f32::consts::PI;
+            pan_gain_l = p_norm.cos();
+            pan_gain_r = p_norm.sin();
+            
+            if self.pan > 0.0 {
+                 pan_gain_l *= 1.0 - self.pan;
+            } else {
+                 pan_gain_r *= 1.0 + self.pan;
+            }
+        }
+        
+        let combined_gain = self.gain;
+        let final_gain_l = combined_gain * pan_gain_l;
+        let final_gain_r = combined_gain * pan_gain_r;
+        
+        // Calculate Peaks for Metering
+        let mut max_l: f32 = 0.0;
+        let mut max_r: f32 = 0.0;
+        
+        for i in 0..len {
+            output_l[i] *= final_gain_l;
+            output_r[i] *= final_gain_r;
+            
+            let abs_l = output_l[i].abs();
+            let abs_r = output_r[i].abs();
+            if abs_l > max_l { max_l = abs_l; }
+            if abs_r > max_r { max_r = abs_r; }
+        }
+        
+        // Store recent peak (decay logic can be done in JS, here we capture block peak)
+        self.peak_l = max_l;
+        self.peak_r = max_r;
     }
 
     /// Process compression (same as WasmAudioProcessor)
@@ -428,6 +723,14 @@ impl ChannelStrip {
     }
 }
 
+#[wasm_bindgen]
+pub fn allocate_f32_array(size: usize) -> *mut f32 {
+    let mut vec = Vec::with_capacity(size);
+    let ptr = vec.as_mut_ptr();
+    std::mem::forget(vec); // Prevent deallocation
+    ptr
+}
+
 // ============================================
 // UNIFIED MIXER PROCESSOR (MegaMixer)
 // ============================================
@@ -436,6 +739,12 @@ impl ChannelStrip {
 pub struct UnifiedMixerProcessor {
     channels: Vec<ChannelStrip>,
     sample_rate: f32,
+    
+    // ✅ NEW: Sample-Accurate Transport
+    transport: Transport,
+    
+    // ✅ NEW: Shared State Pointer (SAB)
+    shared_state_ptr: *mut f32,
 
     // Global master compression
     master_comp_gain: f32,
@@ -443,6 +752,12 @@ pub struct UnifiedMixerProcessor {
 
     // Solo state tracking
     any_solo_active: bool,
+    
+    // Pre-allocated temp buffers (prevent allocation in hot path)
+    temp_l: Vec<f32>,
+    temp_r: Vec<f32>,
+    in_l: Vec<f32>,
+    in_r: Vec<f32>,
 }
 
 #[wasm_bindgen]
@@ -457,9 +772,80 @@ impl UnifiedMixerProcessor {
         UnifiedMixerProcessor {
             channels,
             sample_rate,
+            transport: Transport::new(sample_rate), // ✅ Initialize Transport
+            shared_state_ptr: std::ptr::null_mut(), // ✅ Initialize null pointer
             master_comp_gain: 1.0,
             master_comp_threshold_linear: 1.0,
             any_solo_active: false,
+            // Pre-allocate temp buffers (128 samples max)
+            temp_l: vec![0.0; 128],
+            temp_r: vec![0.0; 128],
+            in_l: vec![0.0; 128],
+            in_r: vec![0.0; 128],
+        }
+    }
+
+    /// Set the shared state buffer pointer (SAB)
+    pub fn set_shared_state_buffer(&mut self, ptr: *mut f32) {
+        self.shared_state_ptr = ptr;
+    }
+
+    /// Sync Transport state with Shared Array Buffer
+    /// Reads commands (int) and params (float). Writes position.
+    fn sync_state(&mut self) {
+        if self.shared_state_ptr.is_null() { return; }
+
+        unsafe {
+            // Re-interpret pointer for mixed Int/Float access
+            let int_view = self.shared_state_ptr as *mut i32;
+            let float_view = self.shared_state_ptr;
+
+            // --- READ FROM JS (Commands) ---
+            // Check play state (Index 0)
+            let play_state = *int_view.add(SharedAudioState::idx_play_state());
+            match play_state {
+                0 => { if self.transport.is_playing { self.transport.stop(); } },
+                1 => { if !self.transport.is_playing { self.transport.play(); } },
+                2 => { if self.transport.is_playing { self.transport.pause(); } },
+                _ => {}
+            }
+
+            // Check BPM (Index 16)
+            let bpm = *float_view.add(SharedAudioState::idx_bpm());
+            if bpm > 0.0 && (bpm - self.transport.bpm).abs() > 0.001 {
+                self.transport.set_bpm(bpm);
+            }
+            
+            // --- READ FROM JS (Seek Command) ---
+            // Check Seek Trigger (Index 2)
+            let seek_trigger_ptr = int_view.add(SharedAudioState::idx_seek_trigger());
+            let seek_trigger = *seek_trigger_ptr;
+            if seek_trigger == 1 {
+                // Read Target (Index 20)
+                let target_ticks = *float_view.add(SharedAudioState::idx_seek_target());
+                if target_ticks >= 0.0 {
+                     // Convert ticks to samples
+                     let target_samples = (target_ticks * self.transport.samples_per_tick) as u64;
+                     self.transport.set_position_samples(target_samples);
+                     
+                     // ✅ FLUSH: Clear buffers (reverb tails, delays, filters) on seek
+                     // This prevents old audio from bleeding into the new position
+                     self.reset();
+                }
+                // Reset trigger
+                *seek_trigger_ptr = 0;
+            }
+            
+            // --- READ FROM JS (Loop Params) ---
+            let loop_enabled = *float_view.add(SharedAudioState::idx_loop_enabled()) > 0.5;
+            let loop_start = *float_view.add(SharedAudioState::idx_loop_start());
+            let loop_end = *float_view.add(SharedAudioState::idx_loop_end());
+            self.transport.set_loop(loop_enabled, loop_start, loop_end);
+
+            // --- WRITE TO JS (Position) ---
+            // Write current position info for UI
+            *float_view.add(SharedAudioState::idx_position_samples()) = self.transport.current_sample as f32;
+            *float_view.add(SharedAudioState::idx_position_ticks()) = self.transport.get_current_tick() as f32;
         }
     }
 
@@ -468,41 +854,92 @@ impl UnifiedMixerProcessor {
     /// # Arguments
     /// * `interleaved_inputs` - Flat array: [ch0_L_s0, ch0_R_s0, ch1_L_s0, ch1_R_s0, ..., ch0_L_s1, ch0_R_s1, ...]
     /// * `output_l` - Left channel output buffer
-    /// * `output_r` - Right channel output buffer
-    /// * `block_size` - Number of samples per block
-    /// * `num_channels` - Number of input channels
     #[wasm_bindgen]
     pub fn process_mix(
         &mut self,
-        interleaved_inputs: &[f32],
-        output_l: &mut [f32],
-        output_r: &mut [f32],
+        interleaved_ptr: *const f32,
+        input_len: usize,
+        out_l_ptr: *mut f32,
+        out_r_ptr: *mut f32,
         block_size: usize,
-        num_channels: usize,
     ) {
-        // 🧪 MINIMAL TEST: Match JavaScript exactly
-        // Clear output
-        for i in 0..block_size {
-            output_l[i] = 0.0;
-            output_r[i] = 0.0;
+        // worker_log("PM: Raw Ptr Start");
+        
+        // 1. Sync State with JS (Shared Memory)
+        self.sync_state();
+
+        // SAFETY: We trust the JS caller to provide valid pointers allocated via allocate_f32_array
+        let interleaved_inputs = unsafe { std::slice::from_raw_parts(interleaved_ptr, input_len) };
+        let output_l = unsafe { std::slice::from_raw_parts_mut(out_l_ptr, block_size) };
+        let output_r = unsafe { std::slice::from_raw_parts_mut(out_r_ptr, block_size) };
+
+        // Zero outputs
+        for x in output_l.iter_mut() { *x = 0.0; }
+        for x in output_r.iter_mut() { *x = 0.0; }
+        
+        // worker_log("PM: Zeroed");
+
+        let num_channels = self.channels.len();
+        
+        // Resize temp buffers if needed
+        if self.temp_l.len() < block_size {
+             self.temp_l.resize(block_size, 0.0);
+             self.temp_r.resize(block_size, 0.0);
+             self.in_l.resize(block_size, 0.0);
+             self.in_r.resize(block_size, 0.0);
         }
 
-        // Simple sum - no solo/mute, no channel processing, just raw sum
-        for sample_idx in 0..block_size {
-            for ch_idx in 0..num_channels {
-                // Calculate input index: sample_idx * num_channels * 2 + ch_idx * 2
-                let input_base_idx = sample_idx * num_channels * 2 + ch_idx * 2;
+        // Check global solo state
+        self.any_solo_active = self.channels.iter().any(|c| c.solo);
 
-                if input_base_idx + 1 < interleaved_inputs.len() {
-                    let in_l = interleaved_inputs[input_base_idx];
-                    let in_r = interleaved_inputs[input_base_idx + 1];
+        // Mix loop
+        for (i, channel) in self.channels.iter_mut().enumerate() {
+            // Check Mute/Solo logic
+            if channel.mute { continue; }
+            if self.any_solo_active && !channel.solo { continue; }
 
-                    // Direct sum - exactly like JavaScript
-                    output_l[sample_idx] += in_l;
-                    output_r[sample_idx] += in_r;
+            // De-interleave input for this channel
+            // Input format: [S0_C0_L, S0_C0_R, S0_C1_L, S0_C1_R, ...]
+            // Index for Sample s, Channel c: s * num_channels * 2 + c * 2
+            let mut has_signal = false;
+            for s in 0..block_size {
+                let idx = s * num_channels * 2 + i * 2;
+                if idx + 1 < interleaved_inputs.len() {
+                    let l = interleaved_inputs[idx];
+                    let r = interleaved_inputs[idx+1];
+                    self.in_l[s] = l;
+                    self.in_r[s] = r;
+                    if l.abs() > 0.0001 || r.abs() > 0.0001 { has_signal = true; }
                 }
             }
+
+            // Optimization: Skip empty channels
+            if !has_signal { continue; }
+
+            // Process Channel Strip (EQ, Comp, Gain, Pan)
+            // Note: We use in_l/in_r as source and mix directly into output_l/output_r?
+            // ChannelStrip process uses in-place or separate? separate.
+            // Using temp_l/temp_r as destination for channel strip
+            channel.process_block(
+                &self.in_l[0..block_size], 
+                &self.in_r[0..block_size], 
+                &mut self.temp_l[0..block_size], 
+                &mut self.temp_r[0..block_size], 
+                self.sample_rate
+            );
+
+            // Sum to Master Bus
+            for s in 0..block_size {
+                output_l[s] += self.temp_l[s];
+                output_r[s] += self.temp_r[s];
+            }
         }
+
+        // Master Compression / Limiting (Optional - future)
+        // ...
+
+        // 2. Advance Sample Clock
+        self.transport.advance(block_size as u64);
     }
 
     /// Update channel parameters
@@ -575,352 +1012,39 @@ impl UnifiedMixerProcessor {
     pub fn get_num_channels(&self) -> usize {
         self.channels.len()
     }
-}
-// ============================================
-// DELAY LINE (Circular Buffer)
-// ============================================
 
-struct DelayLine {
-    buffer: Vec<f32>,
-    index: usize,
-}
-
-impl DelayLine {
-    fn new(size: usize) -> DelayLine {
-        DelayLine {
-            buffer: vec![0.0; size],
-            index: 0,
-        }
-    }
-
-    fn read(&self) -> f32 {
-        self.buffer[self.index]
-    }
-
-    fn read_at(&self, offset: usize) -> f32 {
-        let idx = (self.index + self.buffer.len() - offset) % self.buffer.len();
-        self.buffer[idx]
-    }
-
-    // Linear interpolation read
-    fn read_interpolated(&self, delay_samples: f32) -> f32 {
-        let delay_int = delay_samples.floor() as usize;
-        let delay_frac = delay_samples - delay_int as f32;
-
-        let idx1 = (self.index + self.buffer.len() - delay_int) % self.buffer.len();
-        let idx2 = (self.index + self.buffer.len() - delay_int - 1) % self.buffer.len();
-
-        let s1 = self.buffer[idx1];
-        let s2 = self.buffer[idx2];
-
-        s1 + (s2 - s1) * delay_frac
-    }
-
-    fn write(&mut self, value: f32) {
-        self.buffer[self.index] = value;
-        self.index = (self.index + 1) % self.buffer.len();
-    }
-
-    fn reset(&mut self) {
-        for x in &mut self.buffer {
-            *x = 0.0;
-        }
-        self.index = 0;
-    }
-}
-
-// ============================================
-// REVERB COMPONENTS
-// ============================================
-
-struct CombFilter {
-    delay: DelayLine,
-    filter_state: f32,
-    filter_state2: f32, // Second pole
-    base_size: usize,
-}
-
-impl CombFilter {
-    fn new(size: usize) -> CombFilter {
-        CombFilter {
-            delay: DelayLine::new(size),
-            filter_state: 0.0,
-            filter_state2: 0.0,
-            base_size: size,
-        }
-    }
-
-    fn process(&mut self, input: f32, feedback: f32, damp1: f32, damp2: f32) -> f32 {
-        let output = self.delay.read();
-
-        // Two-pole damping
-        self.filter_state = output + damp1 * (self.filter_state - output);
-        self.filter_state2 = self.filter_state + damp2 * (self.filter_state2 - self.filter_state);
-        
-        let filtered = self.filter_state2;
-        
-        // Feedback
-        let new_input = input + filtered * feedback;
-        
-        // Safety check
-        let safe_input = if new_input.is_finite() { new_input } else { 0.0 };
-        
-        self.delay.write(safe_input);
-        
-        output
-    }
-    
-    // Process with modulation
-    fn process_modulated(&mut self, input: f32, feedback: f32, damp1: f32, damp2: f32, mod_delay: f32) -> f32 {
-        // Modulated read
-        let output = self.delay.read_interpolated(mod_delay);
-
-        // Two-pole damping
-        self.filter_state = output + damp1 * (self.filter_state - output);
-        self.filter_state2 = self.filter_state + damp2 * (self.filter_state2 - self.filter_state);
-        
-        let filtered = self.filter_state2;
-        
-        // Feedback
-        let new_input = input + filtered * feedback;
-        
-        // Safety check
-        let safe_input = if new_input.is_finite() { new_input } else { 0.0 };
-        
-        self.delay.write(safe_input);
-        
-        output
-    }
-
-    fn reset(&mut self) {
-        self.delay.reset();
-        self.filter_state = 0.0;
-        self.filter_state2 = 0.0;
-    }
-}
-
-struct AllpassFilter {
-    delay: DelayLine,
-}
-
-impl AllpassFilter {
-    fn new(size: usize) -> AllpassFilter {
-        AllpassFilter {
-            delay: DelayLine::new(size),
-        }
-    }
-
-    fn process(&mut self, input: f32) -> f32 {
-        let delayed = self.delay.read();
-        let output = -input + delayed;
-        let feedback = input + delayed * 0.5;
-        
-        self.delay.write(feedback);
-        
-        output
-    }
-
-    fn reset(&mut self) {
-        self.delay.reset();
-    }
-}
-
-// ============================================
-// REVERB PROCESSOR
-// ============================================
-
-#[wasm_bindgen]
-pub struct ReverbProcessor {
-    sample_rate: f32,
-    
-    // Components
-    combs_l: Vec<CombFilter>,
-    combs_r: Vec<CombFilter>,
-    allpass_l: Vec<AllpassFilter>,
-    allpass_r: Vec<AllpassFilter>,
-    
-    // Pre-delay
-    pre_delay: DelayLine,
-    
-    // Early reflections
-    early_delays: Vec<usize>,
-    early_gains: Vec<f32>,
-    early_buffer: DelayLine,
-    
-    // LFO
-    lfo_phase: f32,
-}
-
-#[wasm_bindgen]
-impl ReverbProcessor {
-    #[wasm_bindgen(constructor)]
-    pub fn new(sample_rate: f32) -> ReverbProcessor {
-        let scale = sample_rate / 44100.0;
-        
-        // Tunings
-        let comb_tunings = [1557, 1617, 1491, 1422];
-        let allpass_tunings = [225, 341, 441, 556];
-        let stereo_spread = 23;
-        
-        // Initialize Combs
-        let mut combs_l = Vec::new();
-        let mut combs_r = Vec::new();
-        
-        for &t in &comb_tunings {
-            let size_l = (t as f32 * scale) as usize;
-            let size_r = ((t + stereo_spread) as f32 * scale) as usize;
-            // Add extra buffer for modulation
-            combs_l.push(CombFilter::new(size_l + 100)); 
-            combs_r.push(CombFilter::new(size_r + 100));
-        }
-        
-        // Initialize Allpass
-        let mut allpass_l = Vec::new();
-        let mut allpass_r = Vec::new();
-        
-        for &t in &allpass_tunings {
-            let size = (t as f32 * scale) as usize;
-            allpass_l.push(AllpassFilter::new(size));
-            allpass_r.push(AllpassFilter::new(size));
-        }
-        
-        // Pre-delay (max 0.5s)
-        let pre_delay_size = (sample_rate * 0.5) as usize;
-        
-        // Early reflections
-        let early_times = [5, 11, 17, 23, 31, 37, 43, 47, 53, 59, 67, 73]; // ms
-        let early_delays: Vec<usize> = early_times.iter()
-            .map(|&ms| (ms as f32 / 1000.0 * sample_rate) as usize)
-            .collect();
-            
-        let early_gains: Vec<f32> = early_times.iter()
-            .map(|&ms| (-ms as f32 / 80.0).exp()) // Decay curve
-            .collect();
-            
-        let early_buffer_size = (0.1 * sample_rate) as usize; // 100ms max for early
-        
-        ReverbProcessor {
-            sample_rate,
-            combs_l,
-            combs_r,
-            allpass_l,
-            allpass_r,
-            pre_delay: DelayLine::new(pre_delay_size),
-            early_delays,
-            early_gains,
-            early_buffer: DelayLine::new(early_buffer_size),
-            lfo_phase: 0.0,
-        }
-    }
-    
+    /// Add an effect to a channel
+    /// 
+    /// effect_type: 0 = Simple Delay
     #[wasm_bindgen]
-    pub fn process(
-        &mut self,
-        input_l: &[f32],
-        input_r: &[f32],
-        output_l: &mut [f32],
-        output_r: &mut [f32],
-        size: f32,
-        decay: f32,
-        damping: f32,
-        pre_delay_time: f32,
-        wet: f32,
-        early_late_mix: f32,
-        width: f32,
-        mod_depth: f32,
-        mod_rate: f32,
-    ) {
-        let len = input_l.len().min(input_r.len()).min(output_l.len()).min(output_r.len());
+    pub fn add_effect(&mut self, channel_idx: usize, effect_type: usize) -> Result<(), JsValue> {
+        if channel_idx >= self.channels.len() { 
+            return Err(JsValue::from_str("Channel index out of bounds")); 
+        }
         
-        // Calculate coefficients
-        let avg_comb_delay = 1400.0 * (self.sample_rate / 44100.0);
-        let feedback = 10.0_f32.powf(-3.0 * avg_comb_delay / (decay * self.sample_rate)).min(0.999);
+        let effect: Box<dyn AudioNode + Send> = match effect_type {
+            0 => Box::new(crate::effects::SimpleDelay::new(self.sample_rate)),
+            _ => return Err(JsValue::from_str("Unknown effect type")),
+        };
         
-        let damp_freq = 2000.0 + (1.0 - damping) * 18000.0;
-        let omega = 2.0 * std::f32::consts::PI * damp_freq / self.sample_rate;
-        let damp1 = (-omega).exp();
-        let damp2 = (-omega * 1.5).exp();
-        
-        let pre_delay_samples = (pre_delay_time * self.sample_rate) as usize;
-        
-        let lfo_inc = 2.0 * std::f32::consts::PI * mod_rate / self.sample_rate;
-        
-        for i in 0..len {
-            // Update LFO
-            self.lfo_phase += lfo_inc;
-            if self.lfo_phase > 2.0 * std::f32::consts::PI {
-                self.lfo_phase -= 2.0 * std::f32::consts::PI;
-            }
-            
-            let in_mono = (input_l[i] + input_r[i]) * 0.5;
-            
-            // Pre-delay
-            self.pre_delay.write(in_mono);
-            let delayed = self.pre_delay.read_at(pre_delay_samples);
-            
-            // Early Reflections
-            self.early_buffer.write(delayed);
-            let mut early_sum = 0.0;
-            for j in 0..self.early_delays.len() {
-                early_sum += self.early_buffer.read_at(self.early_delays[j]) * self.early_gains[j];
-            }
-            
-            // Late Reverb (Combs)
-            let mut comb_sum_l = 0.0;
-            let mut comb_sum_r = 0.0;
-            
-            for j in 0..4 {
-                // Modulated delay for chorus effect
-                let phase_offset = j as f32 * std::f32::consts::PI / 4.0;
-                let lfo = (self.lfo_phase + phase_offset).sin();
+        self.channels[channel_idx].inserts.push(effect);
+        Ok(())
+    }
+
+    /// fast polling of levels
+    #[wasm_bindgen]
+    pub fn get_channel_levels(&mut self, levels_ptr: *mut f32, len: usize) {
+        let levels = unsafe { std::slice::from_raw_parts_mut(levels_ptr, len) };
+        for (i, channel) in self.channels.iter_mut().enumerate() {
+            if i * 2 + 1 < len {
+                levels[i * 2] = channel.peak_l;
+                levels[i * 2 + 1] = channel.peak_r;
                 
-                let base_size_l = self.combs_l[j].base_size as f32 * (0.5 + size * 1.5);
-                let base_size_r = self.combs_r[j].base_size as f32 * (0.5 + size * 1.5);
-                
-                let mod_amount = mod_depth * 0.05 * base_size_l; // +/- 5%
-                
-                let delay_l = base_size_l + lfo * mod_amount;
-                let delay_r = base_size_r + lfo * mod_amount; // Sync LFO for now, could offset
-                
-                comb_sum_l += self.combs_l[j].process_modulated(delayed, feedback, damp1, damp2, delay_l);
-                comb_sum_r += self.combs_r[j].process_modulated(delayed, feedback, damp1, damp2, delay_r);
+                // Decay happens in JS, but we reset here to capture *new* peaks next block
+                channel.peak_l = 0.0;
+                channel.peak_r = 0.0;
             }
-            
-            comb_sum_l *= 0.25;
-            comb_sum_r *= 0.25;
-            
-            // Allpass Diffusion
-            let mut late_l = comb_sum_l;
-            let mut late_r = comb_sum_r;
-            
-            for j in 0..4 {
-                late_l = self.allpass_l[j].process(late_l);
-                late_r = self.allpass_r[j].process(late_r);
-            }
-            
-            // Mix Early/Late
-            let mut reverb_l = early_sum * (1.0 - early_late_mix) + late_l * early_late_mix;
-            let mut reverb_r = early_sum * (1.0 - early_late_mix) + late_r * early_late_mix;
-            
-            // Stereo Width (Mid/Side)
-            let mid = (reverb_l + reverb_r) * 0.5;
-            let side = (reverb_l - reverb_r) * 0.5;
-            reverb_l = mid + side * width;
-            reverb_r = mid - side * width;
-            
-            // Output Mix
-            output_l[i] = input_l[i] * (1.0 - wet) + reverb_l * wet * 0.5;
-            output_r[i] = input_r[i] * (1.0 - wet) + reverb_r * wet * 0.5;
         }
     }
-    
-    #[wasm_bindgen]
-    pub fn reset(&mut self) {
-        for c in &mut self.combs_l { c.reset(); }
-        for c in &mut self.combs_r { c.reset(); }
-        for a in &mut self.allpass_l { a.reset(); }
-        for a in &mut self.allpass_r { a.reset(); }
-        self.pre_delay.reset();
-        self.early_buffer.reset();
-    }
 }
+

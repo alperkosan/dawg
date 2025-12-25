@@ -209,7 +209,7 @@ const StardustChorusUI_V2 = ({ trackId, effect, effectNode, definition }) => {
   const [localWet, setLocalWet] = useState(wet);
 
   // Get category colors
-  const categoryColors = useMemo(() => getCategoryColors('cosmic-modulation'), []);
+
 
   // Use ParameterBatcher for smooth parameter updates
   const { setParam, setParams } = useParameterBatcher(effectNode);

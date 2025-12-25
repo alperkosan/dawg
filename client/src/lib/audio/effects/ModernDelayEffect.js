@@ -156,10 +156,10 @@ export class ModernDelayEffect extends BaseEffect {
 
       // Mix Parameters
       wet: {
-        value: 0.35,
+        value: 0.0,  // ✅ Start with effect OFF
         min: 0.0,
         max: 1.0,
-        default: 0.35,
+        default: 0.0,
         label: 'Mix',
         unit: '%'
       },

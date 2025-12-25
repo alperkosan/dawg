@@ -17,6 +17,7 @@
  */
 
 import { AudioContextService } from './AudioContextService';
+import { AudioEngineGlobal } from '../core/AudioEngineGlobal';
 import { idleDetector } from '../utils/IdleDetector.js';
 
 class MeterService {
@@ -48,7 +49,7 @@ class MeterService {
   _setupIdleDetection() {
     idleDetector.onIdle(() => {
       // Only pause if not playing audio
-      const audioEngine = AudioContextService.getAudioEngine();
+      const audioEngine = AudioEngineGlobal.get();
       const isPlaying = audioEngine?.transport?.state === 'started';
 
       if (!isPlaying && this.isRunning) {
@@ -152,7 +153,7 @@ class MeterService {
     this.lastUpdate = timestamp;
 
     // Get audio engine once (not in loop)
-    const audioEngine = AudioContextService.getAudioEngine();
+    const audioEngine = AudioEngineGlobal.get();
     if (!audioEngine) {
       this.rafId = requestAnimationFrame(this.update.bind(this));
       return;
@@ -179,13 +180,7 @@ class MeterService {
         analyzer = audioEngine.masterAnalyzer;
       }
 
-      // Fallback to old mixer channels (backward compatibility)
-      if (!analyzer && audioEngine.mixerChannels) {
-        const channel = audioEngine.mixerChannels.get(trackId);
-        if (channel && channel.analyzer) {
-          analyzer = channel.analyzer;
-        }
-      }
+      // ⚠️ REMOVED: mixerChannels fallback - Replaced by MixerInsert system
 
       if (!analyzer) continue;
 

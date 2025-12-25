@@ -7,72 +7,91 @@
 import { useEffect, useCallback, useState, useMemo } from 'react';
 import { getPreviewManager } from '@/lib/audio/preview';
 import { AudioContextService } from '@/lib/services/AudioContextService';
-import { SAMPLE_CHOP_PRESETS } from '@/config/sampleChopPresets';
-import { createDefaultSampleChopPattern } from '@/lib/audio/instruments/sample/sampleChopUtils';
+import { AudioEngineGlobal } from '@/lib/core/AudioEngineGlobal';
 import useInstrumentEditorStore from '../../../../store/useInstrumentEditorStore';
-import Slider from '../controls/Slider';
-import WaveformDisplay from '../WaveformDisplay';
-import SampleChopEditor from '../granular/SampleChopEditor';
+import { Slider } from '@/components/controls/base/Slider';
+import { WaveformWorkbench } from '@/features/sample_editor_v3/components/WaveformWorkbench';
+import '@/features/sample_editor_v3/SampleEditorV3.css';
 import './DrumSamplerEditor.css';
+import { ADSRCanvas } from '../../../../components/controls/canvas/ADSRCanvas';
+import { processAudioBuffer } from '@/lib/audio/utils/processAudioBuffer';
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
-const normalizeLength = (length) => {
-  if (!Number.isFinite(length) || length <= 0) return 16;
-  return Math.max(1, Math.round(length));
-};
 
-const instantiateSampleChopPreset = (preset, currentPattern = null, timestamp = Date.now()) => {
-  if (!preset?.pattern) {
-    return createDefaultSampleChopPattern();
+const ENVELOPE_PRESETS = [
+  {
+    id: 'short-pluck',
+    name: 'Short Pluck',
+    attack: 5,
+    decay: 160,
+    sustain: 20,
+    release: 60
+  },
+  {
+    id: 'medium-hit',
+    name: 'Medium Hit',
+    attack: 10,
+    decay: 400,
+    sustain: 40,
+    release: 120
+  },
+  {
+    id: 'long-tail',
+    name: 'Long Tail',
+    attack: 40,
+    decay: 800,
+    sustain: 70,
+    release: 600
+  },
+  {
+    id: '808-stab',
+    name: '808 Stab',
+    attack: 0,
+    decay: 0,
+    sustain: 100,
+    release: 0
   }
+];
 
-  const presetPattern = preset.pattern;
-  const presetLength = normalizeLength(presetPattern.length);
-  const existingLength = normalizeLength(currentPattern?.length || presetLength);
-  const targetLength = Math.max(existingLength, presetLength);
-  const repeats = Math.max(1, Math.ceil(targetLength / presetLength));
-
-  const slices = [];
-  for (let repeat = 0; repeat < repeats; repeat += 1) {
-    const offset = repeat * presetLength;
-      (presetPattern.slices || []).forEach((slice, index) => {
-      const startStep = clamp((slice.startStep ?? 0) + offset, 0, targetLength);
-      const endStep = clamp((slice.endStep ?? slice.startStep ?? 0) + offset, 0, targetLength);
-      if (endStep <= startStep) {
-        return;
-      }
-        slices.push({
-        ...slice,
-        startStep,
-        endStep,
-          id: `${preset.id}-slice-${timestamp}-${repeat}-${index}`,
-          displayLabel: `${repeat + 1}.${index + 1}`,
-      });
-    });
-  }
-
-  return {
-    id: `${preset.id}-${timestamp}`,
-    name: preset.name,
-    length: targetLength,
-    snap: currentPattern?.snap || presetPattern.snap || '1/16',
-    tempo: currentPattern?.tempo || presetPattern.tempo || 140,
-    loopEnabled: currentPattern?.loopEnabled ?? presetPattern.loopEnabled ?? true,
-    slices,
-  };
-};
-
+const LFO_SHAPES = [
+  { id: 'sine', label: 'Sine' },
+  { id: 'triangle', label: 'Triangle' },
+  { id: 'square', label: 'Square' }
+];
 const DrumSamplerEditor = ({ instrumentData }) => {
   const sampleUrl = instrumentData.url || '';
-  const sampleName = sampleUrl.split('/').pop();
+  // ✅ FIX: Prioritize instrument name. If falling back to URL, handle Data URLs gracefully.
+  const getSampleName = () => {
+    if (instrumentData.name) return instrumentData.name;
+    if (sampleUrl.startsWith('data:')) return `AI Sample - ${instrumentData.name || 'Untitled'}`;
+    return sampleUrl.split('/').pop() || 'Untitled';
+  };
+
+  // Format URL display - hide data URLs
+  const getDisplayUrl = () => {
+    if (sampleUrl.startsWith('data:')) return 'AI Generated Audio';
+    return sampleUrl;
+  };
+  const sampleName = getSampleName();
   const [audioBuffer, setAudioBuffer] = useState(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
-  const sampleChop = instrumentData?.sampleChop;
-  const sampleChopMode = instrumentData?.sampleChopMode || 'chop';
   const waveformData = useMemo(() => {
     if (!audioBuffer) return null;
-    const channelData = audioBuffer.getChannelData(0);
+
+    // ✅ CRITICAL FIX: Handle both native AudioBuffer and Tone.ToneAudioBuffer
+    // If it's a ToneAudioBuffer, use .get() to retrieve the native AudioBuffer
+    const rawBuffer = (audioBuffer.get && typeof audioBuffer.get === 'function')
+      ? audioBuffer.get()
+      : audioBuffer;
+
+    // Double check if getChannelData exists
+    if (!rawBuffer || typeof rawBuffer.getChannelData !== 'function') {
+      console.warn('Waveform visualization: Invalid audio buffer', rawBuffer);
+      return null;
+    }
+
+    const channelData = rawBuffer.getChannelData(0);
     const bucketCount = 512;
     const samplesPerBucket = Math.max(1, Math.floor(channelData.length / bucketCount));
     const buckets = [];
@@ -89,18 +108,32 @@ const DrumSamplerEditor = ({ instrumentData }) => {
       buckets.push({ min, max });
     }
     return {
-      duration: audioBuffer.duration,
+      duration: rawBuffer.duration,
       buckets,
     };
   }, [audioBuffer]);
 
   // Load audio buffer for waveform
   useEffect(() => {
+    // ✅ OPTIMIZATION: Use pre-loaded buffer if available (e.g. from AI generation)
+    // CRITICAL: Check for valid buffer structure, not just existence (to avoid empty objects)
+    const isValidBuffer = (buf) => buf && (
+      (buf instanceof AudioBuffer) ||
+      (buf.get && typeof buf.get === 'function') ||
+      (buf.length && buf.numberOfChannels)
+    );
+
+    if (isValidBuffer(instrumentData.audioBuffer)) {
+      setAudioBuffer(instrumentData.audioBuffer);
+      console.log('✅ Used existing audio buffer from instrument data');
+      return;
+    }
+
     if (!sampleUrl) return;
 
     const loadAudio = async () => {
       try {
-        const audioEngine = AudioContextService.getAudioEngine();
+        const audioEngine = AudioEngineGlobal.get();
         if (!audioEngine?.audioContext) return;
 
         const response = await fetch(sampleUrl);
@@ -115,17 +148,93 @@ const DrumSamplerEditor = ({ instrumentData }) => {
     };
 
     loadAudio();
-  }, [sampleUrl]);
+  }, [sampleUrl, instrumentData.audioBuffer]);
 
   // Setup PreviewManager with current instrument
   useEffect(() => {
-    const audioEngine = AudioContextService.getAudioEngine();
+    const audioEngine = AudioEngineGlobal.get();
     if (audioEngine?.audioContext && instrumentData) {
       // ✅ FX CHAIN: Pass audioEngine to PreviewManager for mixer routing
       const previewManager = getPreviewManager(audioEngine.audioContext, audioEngine);
       previewManager.setInstrument(instrumentData);
     }
   }, [instrumentData]);
+
+  // ✅ CRITICAL FIX: Sync playback instrument parameters when editor opens
+  // This ensures envelopeEnabled and other parameters are applied to playback instrument
+  // Without this, playback instrument uses stale/default values until user changes something
+  /* Note: Parameter changes are already synced via handleParameterChange, so we only need to sync on mount
+  useEffect(() => {
+    const audioEngine = AudioEngineGlobal.get();
+    if (!audioEngine || !instrumentData?.id) return;
+
+    const instrument = audioEngine.instruments.get(instrumentData.id);
+    if (!instrument || typeof instrument.updateParameters !== 'function') return;
+
+    // Sync all relevant parameters to playback instrument
+    // ✅ CRITICAL FIX: Read ADSR from envelope object if top-level doesn't exist
+    /* envelope values are in seconds, but updateParameters expects ms for attack/decay/release
+    const envelope = instrumentData.envelope || {};
+    const paramsToSync = {
+      envelopeEnabled: instrumentData.envelopeEnabled ?? false,
+      attack: instrumentData.attack ?? (envelope.attack !== undefined ? envelope.attack * 1000 : undefined),
+      decay: instrumentData.decay ?? (envelope.decay !== undefined ? envelope.decay * 1000 : undefined),
+      sustain: instrumentData.sustain ?? envelope.sustain,
+      release: instrumentData.release ?? (envelope.release !== undefined ? envelope.release * 1000 : undefined),
+      gain: instrumentData.gain,
+      pan: instrumentData.pan,
+      pitchOffset: instrumentData.pitchOffset,
+      sampleStart: instrumentData.sampleStart,
+      sampleEnd: instrumentData.sampleEnd,
+      cutItself: instrumentData.cutItself
+    };
+
+    // Remove undefined values
+    Object.keys(paramsToSync).forEach(key => {
+      if (paramsToSync[key] === undefined) {
+        delete paramsToSync[key];
+      }
+    });
+
+    if (Object.keys(paramsToSync).length > 0) {
+      instrument.updateParameters(paramsToSync);
+      if (import.meta.env.DEV) {
+        console.log(`🔄 Synced playback instrument parameters on editor open:`, paramsToSync);
+      }
+    }
+  }, [instrumentData?.id]); // Only sync when editor opens (instrument ID changes)*/
+
+  // ✅ SYNC BUFFER FX: Update audio engine when destructive edits (Reverse/Normalize) change
+  useEffect(() => {
+    const audioEngine = AudioEngineGlobal.get();
+    // Use strict check here as well to avoid passing {} to processAudioBuffer
+    const isValidBuffer = (buf) => buf && (
+      (buf instanceof AudioBuffer) ||
+      (buf.get && typeof buf.get === 'function') ||
+      (buf.length && buf.numberOfChannels)
+    );
+
+    if (!audioEngine || !instrumentData.id || !isValidBuffer(audioBuffer)) return;
+
+    const instrument = audioEngine.instruments.get(instrumentData.id);
+    // Only Wasm instruments support setBuffer for now
+    if (!instrument || typeof instrument.setBuffer !== 'function') return;
+
+    const precomputed = instrumentData.precomputed || {};
+
+    // Process buffer (Reverse, Normalize etc.)
+    const processed = processAudioBuffer(audioBuffer, precomputed);
+
+    // Double check result
+    if (processed && isValidBuffer(processed)) {
+      instrument.setBuffer(processed);
+    } else {
+      console.warn('Buffer processing resulted in invalid buffer', processed);
+      // Fallback to original if valid
+      if (isValidBuffer(audioBuffer)) instrument.setBuffer(audioBuffer);
+    }
+
+  }, [audioBuffer, instrumentData.precomputed, instrumentData.id]);
 
   // Play sample preview
   const handlePreview = useCallback(() => {
@@ -151,49 +260,96 @@ const DrumSamplerEditor = ({ instrumentData }) => {
     }
   }, [audioBuffer]);
 
-  // Handle waveform seek
-  const handleSeek = useCallback((time) => {
-    console.log('🎯 Seek to:', time);
-    // TODO: Implement actual seeking when preview supports it
-  }, []);
-
   // Handle parameter change with real-time audio engine update
   const handleParameterChange = useCallback((paramName, value) => {
     // Update store
     useInstrumentEditorStore.getState().updateParameter(paramName, value);
 
+    const payload = { [paramName]: value };
+
     // Update audio engine in real-time
-    const audioEngine = AudioContextService.getAudioEngine();
+    const audioEngine = AudioEngineGlobal.get();
     if (audioEngine && instrumentData.id) {
       const instrument = audioEngine.instruments.get(instrumentData.id);
       if (instrument && typeof instrument.updateParameters === 'function') {
-        instrument.updateParameters({ [paramName]: value });
+        instrument.updateParameters(payload);
         console.log(`✅ ${paramName} updated in audio engine:`, value);
+      }
+    }
+
+    // Keep preview instrument in sync so Preview button matches editor params
+    const previewManager = getPreviewManager();
+    if (previewManager?.previewInstrument && typeof previewManager.previewInstrument.updateParameters === 'function') {
+      try {
+        previewManager.previewInstrument.updateParameters(payload);
+      } catch (err) {
+        console.warn('Preview instrument parameter sync failed', err);
       }
     }
   }, [instrumentData.id]);
 
-  const handleSampleChopChange = useCallback((nextPattern) => {
-    handleParameterChange('sampleChop', nextPattern);
-  }, [handleParameterChange]);
+  // Convert instrument data (ms/0-100) to ADSRCanvas format (s/0-1)
+  const adsrValues = useMemo(() => ({
+    attack: (instrumentData.attack ?? 0) / 1000,
+    decay: (instrumentData.decay ?? 0) / 1000,
+    sustain: (instrumentData.sustain ?? 100) / 100,
+    release: (instrumentData.release ?? 50) / 1000
+  }), [instrumentData.attack, instrumentData.decay, instrumentData.sustain, instrumentData.release]);
 
-  const handleSampleChopModeChange = useCallback((mode) => {
-    if (mode === sampleChopMode) return;
-    handleParameterChange('sampleChopMode', mode);
-  }, [handleParameterChange, sampleChopMode]);
+  const envelopeEnabled = instrumentData.envelopeEnabled ?? false; // ✅ FL Studio behavior: Envelope OFF by default
+  const envelopeTempoSync = instrumentData.envelopeTempoSync ?? false;
+  const volumeLfo = instrumentData.volumeLfo || {
+    shape: 'sine',
+    delay: 0,
+    attack: 0,
+    amount: 50,
+    speed: 2,
+    global: false,
+    tempoSync: false
+  };
 
-  const handleApplySampleChopPreset = useCallback((preset) => {
-    if (!preset) return;
-    const instantiatedPattern = instantiateSampleChopPreset(preset, sampleChop, Date.now());
-    handleSampleChopChange(instantiatedPattern);
-    if (sampleChopMode !== 'chop') {
-      handleSampleChopModeChange('chop');
+  const handleADSRChange = useCallback((newValues) => {
+    // ✅ FL Studio behavior: When user changes envelope values, automatically enable envelope
+    if (!envelopeEnabled) {
+      handleParameterChange('envelopeEnabled', true);
     }
-  }, [handleSampleChopChange, handleSampleChopModeChange, sampleChopMode, sampleChop]);
 
-  const handleResetSampleChop = useCallback(() => {
-    handleSampleChopChange(createDefaultSampleChopPattern());
-  }, [handleSampleChopChange]);
+    // Convert ADSRCanvas format (s/0-1) back to instrument data (ms/0-100)
+    if (newValues.attack !== undefined) handleParameterChange('attack', newValues.attack * 1000);
+    if (newValues.decay !== undefined) handleParameterChange('decay', newValues.decay * 1000);
+    if (newValues.sustain !== undefined) handleParameterChange('sustain', newValues.sustain * 100);
+    if (newValues.release !== undefined) handleParameterChange('release', newValues.release * 1000);
+  }, [handleParameterChange, envelopeEnabled]);
+
+  const handleEnvelopePreset = (presetId) => {
+    const preset = ENVELOPE_PRESETS.find((p) => p.id === presetId);
+    if (!preset) return;
+
+    // ✅ FL Studio behavior: When user applies preset, automatically enable envelope
+    if (!envelopeEnabled) {
+      handleParameterChange('envelopeEnabled', true);
+    }
+
+    handleParameterChange('attack', preset.attack);
+    handleParameterChange('decay', preset.decay);
+    handleParameterChange('sustain', preset.sustain);
+    handleParameterChange('release', preset.release);
+  };
+
+  const handleLfoChange = (key, value) => {
+    const next = { ...volumeLfo, [key]: value };
+    handleParameterChange('volumeLfo', next);
+  };
+
+  const handleInstrumentRegionUpdate = useCallback(
+    (updates) => {
+      if (!updates) return;
+      Object.entries(updates).forEach(([param, value]) => {
+        handleParameterChange(param, value);
+      });
+    },
+    [handleParameterChange]
+  );
 
   return (
     <div className="drumsampler-editor">
@@ -204,7 +360,7 @@ const DrumSamplerEditor = ({ instrumentData }) => {
           <div className="drumsampler-editor__sample-icon">🥁</div>
           <div className="drumsampler-editor__sample-info">
             <div className="drumsampler-editor__sample-name">{sampleName}</div>
-            <div className="drumsampler-editor__sample-path">{sampleUrl}</div>
+            <div className="drumsampler-editor__sample-path">{getDisplayUrl()}</div>
           </div>
           <button className="drumsampler-editor__preview-btn" onClick={handlePreview}>
             ▶ Preview
@@ -212,45 +368,13 @@ const DrumSamplerEditor = ({ instrumentData }) => {
         </div>
       </div>
 
-      {/* Playback Mode */}
+      {/* Advanced Sample Editor */}
       <div className="drumsampler-editor__section">
-        <div className="drumsampler-editor__section-title">Playback Mode</div>
-        <div className="drumsampler-editor__mode-switch">
-          <button
-            type="button"
-            className={`drumsampler-editor__mode-btn ${sampleChopMode !== 'chop' ? 'drumsampler-editor__mode-btn--active' : ''}`}
-            onClick={() => handleSampleChopModeChange('standard')}
-          >
-            Standard
-          </button>
-          <button
-            type="button"
-            className={`drumsampler-editor__mode-btn ${sampleChopMode === 'chop' ? 'drumsampler-editor__mode-btn--active' : ''}`}
-            onClick={() => handleSampleChopModeChange('chop')}
-          >
-            Sample Chop
-          </button>
-        </div>
-        <p className="drumsampler-editor__mode-hint">
-          Standard mode plays the raw sample per note. Sample Chop mode routes notes through your slice pattern/loop.
-        </p>
-      </div>
-
-      {/* Waveform Display */}
-      <div className="drumsampler-editor__section">
-        <div className="drumsampler-editor__section-title">Waveform</div>
-        <WaveformDisplay
-          audioBuffer={audioBuffer}
-          currentTime={currentTime}
-          isPlaying={isPlaying}
-          height={120}
-          loopStart={instrumentData.loopStart || 0}
-          loopEnd={instrumentData.loopEnd || 1}
-          showRMS={false}
-          onLoopChange={(start, end) => {
-            useInstrumentEditorStore.getState().updateParameter('loopStart', start);
-            useInstrumentEditorStore.getState().updateParameter('loopEnd', end);
-          }}
+        <div className="drumsampler-editor__section-title">Sample Editor</div>
+        <WaveformWorkbench
+          instrument={instrumentData}
+          buffer={audioBuffer}
+          onInstrumentChange={handleInstrumentRegionUpdate}
         />
       </div>
 
@@ -296,108 +420,44 @@ const DrumSamplerEditor = ({ instrumentData }) => {
             onChange={(value) => handleParameterChange('pan', value)}
           />
         </div>
-      </div>
 
-      {/* Sample Manipulation */}
-      <div className="drumsampler-editor__section">
-        <div className="drumsampler-editor__section-title">Sample</div>
-        <div className="drumsampler-editor__controls">
-          <Slider
-            label="Start"
-            value={instrumentData.sampleStart || 0}
-            min={0}
-            max={1}
-            step={0.001}
-            color="#6B8EBF"
-            formatValue={(v) => `${(v * 100).toFixed(1)}%`}
-            onChange={(value) => handleParameterChange('sampleStart', value)}
-          />
-          <Slider
-            label="End"
-            value={instrumentData.sampleEnd || 1}
-            min={0}
-            max={1}
-            step={0.001}
-            color="#6B8EBF"
-            formatValue={(v) => `${(v * 100).toFixed(1)}%`}
-            onChange={(value) => handleParameterChange('sampleEnd', value)}
-          />
-          <Slider
-            label="Loop Start"
-            value={instrumentData.loopStart || 0}
-            min={0}
-            max={1}
-            step={0.001}
-            color="#FFB74D"
-            formatValue={(v) => `${(v * 100).toFixed(1)}%`}
-            onChange={(value) => handleParameterChange('loopStart', value)}
-          />
-          <Slider
-            label="Loop End"
-            value={instrumentData.loopEnd || 1}
-            min={0}
-            max={1}
-            step={0.001}
-            color="#FFB74D"
-            formatValue={(v) => `${(v * 100).toFixed(1)}%`}
-            onChange={(value) => handleParameterChange('loopEnd', value)}
-          />
-        </div>
-
-        {/* Toggle Buttons */}
-        <div style={{ display: 'flex', gap: '12px', marginTop: '16px' }}>
-          <button
-            className={`drumsampler-editor__toggle ${instrumentData.loop ? 'drumsampler-editor__toggle--active' : ''}`}
-            onClick={() => handleParameterChange('loop', !instrumentData.loop)}
-          >
-            {instrumentData.loop ? '🔁' : '▶️'} Loop
-          </button>
-          <button
-            className={`drumsampler-editor__toggle ${instrumentData.reverse ? 'drumsampler-editor__toggle--active' : ''}`}
-            onClick={() => handleParameterChange('reverse', !instrumentData.reverse)}
-          >
-            {instrumentData.reverse ? '⏪' : '⏩'} Reverse
-          </button>
-        </div>
-      </div>
-
-      {/* Sample Chop */}
-      <div className="drumsampler-editor__section">
-        <div className="drumsampler-editor__section-title">Sample Chop</div>
-        <div className="sample-chop-presets">
-          <div className="sample-chop-presets__header">
-            <span>Factory Presets</span>
-            <button
-              type="button"
-              className="sample-chop-presets__reset"
-              onClick={handleResetSampleChop}
-            >
-              Reset
-            </button>
-          </div>
-          <div className="sample-chop-presets__grid">
-            {SAMPLE_CHOP_PRESETS.map((preset) => (
-              <button
-                key={preset.id}
-                type="button"
-                className="sample-chop-presets__chip"
-                onClick={() => handleApplySampleChopPreset(preset)}
-                title={preset.description}
-              >
-                <span className="sample-chop-presets__chip-emoji" aria-hidden="true">
-                  {preset.emoji}
-                </span>
-                <span>{preset.name}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-        <SampleChopEditor pattern={sampleChop} onChange={handleSampleChopChange} waveform={waveformData} />
       </div>
 
       {/* Envelope */}
       <div className="drumsampler-editor__section">
         <div className="drumsampler-editor__section-title">Envelope (ADSR)</div>
+        <div className="drumsampler-editor__envelope-toolbar">
+          <button
+            type="button"
+            className={`drumsampler-editor__toggle ${envelopeEnabled ? 'drumsampler-editor__toggle--active' : ''}`}
+            onClick={() => handleParameterChange('envelopeEnabled', !envelopeEnabled)}
+          >
+            {envelopeEnabled ? 'Enabled' : 'Disabled'}
+          </button>
+          <button
+            type="button"
+            className={`drumsampler-editor__toggle ${envelopeTempoSync ? 'drumsampler-editor__toggle--active' : ''}`}
+            onClick={() => handleParameterChange('envelopeTempoSync', !envelopeTempoSync)}
+          >
+            Tempo Sync
+          </button>
+          <select
+            className="drumsampler-editor__preset-select"
+            defaultValue=""
+            onChange={(e) => e.target.value && handleEnvelopePreset(e.target.value)}
+          >
+            <option value="" disabled>Apply Preset...</option>
+            {ENVELOPE_PRESETS.map((preset) => (
+              <option key={preset.id} value={preset.id}>{preset.name}</option>
+            ))}
+          </select>
+        </div>
+        <ADSRCanvas
+          {...adsrValues}
+          onChange={handleADSRChange}
+          width={360}
+          height={100}
+        />
         <div className="drumsampler-editor__controls">
           <Slider
             label="Attack"
@@ -439,6 +499,81 @@ const DrumSamplerEditor = ({ instrumentData }) => {
             formatValue={(v) => `${v.toFixed(0)} ms`}
             onChange={(value) => handleParameterChange('release', value)}
           />
+        </div>
+        <div className="drumsampler-editor__lfo-card">
+          <div className="drumsampler-editor__lfo-header">
+            <h4>Volume LFO</h4>
+            <div className="drumsampler-editor__lfo-actions">
+              <button
+                type="button"
+                className={`drumsampler-editor__toggle ${volumeLfo.tempoSync ? 'drumsampler-editor__toggle--active' : ''}`}
+                onClick={() => handleLfoChange('tempoSync', !volumeLfo.tempoSync)}
+              >
+                Tempo
+              </button>
+              <button
+                type="button"
+                className={`drumsampler-editor__toggle ${volumeLfo.global ? 'drumsampler-editor__toggle--active' : ''}`}
+                onClick={() => handleLfoChange('global', !volumeLfo.global)}
+              >
+                Global
+              </button>
+            </div>
+          </div>
+          <div className="drumsampler-editor__lfo-shapes">
+            {LFO_SHAPES.map((shape) => (
+              <button
+                key={shape.id}
+                type="button"
+                className={`drumsampler-editor__shape-btn ${volumeLfo.shape === shape.id ? 'active' : ''}`}
+                onClick={() => handleLfoChange('shape', shape.id)}
+              >
+                {shape.label}
+              </button>
+            ))}
+          </div>
+          <div className="drumsampler-editor__controls">
+            <Slider
+              label="Delay"
+              value={volumeLfo.delay ?? 0}
+              min={0}
+              max={2000}
+              step={1}
+              color="#9C27B0"
+              formatValue={(v) => `${v.toFixed(0)} ms`}
+              onChange={(value) => handleLfoChange('delay', value)}
+            />
+            <Slider
+              label="Attack"
+              value={volumeLfo.attack ?? 0}
+              min={0}
+              max={2000}
+              step={1}
+              color="#9C27B0"
+              formatValue={(v) => `${v.toFixed(0)} ms`}
+              onChange={(value) => handleLfoChange('attack', value)}
+            />
+            <Slider
+              label="Amount"
+              value={volumeLfo.amount ?? 50}
+              min={-100}
+              max={100}
+              step={1}
+              color="#9C27B0"
+              formatValue={(v) => `${v.toFixed(0)}%`}
+              onChange={(value) => handleLfoChange('amount', value)}
+            />
+            <Slider
+              label="Speed"
+              value={volumeLfo.speed ?? 2}
+              min={0.1}
+              max={20}
+              step={0.1}
+              color="#9C27B0"
+              formatValue={(v) => `${v.toFixed(1)} Hz`}
+              onChange={(value) => handleLfoChange('speed', value)}
+            />
+          </div>
         </div>
       </div>
 
@@ -509,6 +644,23 @@ const DrumSamplerEditor = ({ instrumentData }) => {
         </div>
       </div>
 
+      {/* Enhance */}
+      <div className="drumsampler-editor__section">
+        <div className="drumsampler-editor__section-title">Enhance</div>
+        <div className="drumsampler-editor__controls">
+          <Slider
+            label="Bass Boost"
+            value={instrumentData.bassBoost || 0}
+            min={0}
+            max={100}
+            step={1}
+            color="#FF5722"
+            formatValue={(v) => `${v.toFixed(0)}%`}
+            onChange={(value) => handleParameterChange('bassBoost', value)}
+          />
+        </div>
+      </div>
+
       {/* Info */}
       <div className="drumsampler-editor__section">
         <div className="drumsampler-editor__section-title">Tips</div>
@@ -519,7 +671,7 @@ const DrumSamplerEditor = ({ instrumentData }) => {
           <p>🎵 Use <strong>Pitch</strong> to create melodic variations</p>
         </div>
       </div>
-    </div>
+    </div >
   );
 };
 

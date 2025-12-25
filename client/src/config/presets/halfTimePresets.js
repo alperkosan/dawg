@@ -23,7 +23,8 @@ export const halfTimePresets = [
       pitchLock: 1,
       grainSize: 100,
       grainDensity: 8,
-      mix: 1.0
+      mix: 1.0,
+      reverse: 0
     }
   },
   {
@@ -40,7 +41,8 @@ export const halfTimePresets = [
       pitchLock: 1,
       grainSize: 150,
       grainDensity: 10,
-      mix: 1.0
+      mix: 1.0,
+      reverse: 0
     }
   },
   {
@@ -57,7 +59,8 @@ export const halfTimePresets = [
       pitchLock: 1,
       grainSize: 80,
       grainDensity: 12,
-      mix: 1.0
+      mix: 1.0,
+      reverse: 0
     }
   },
 
@@ -78,7 +81,8 @@ export const halfTimePresets = [
       pitchLock: 0,
       grainSize: 200,
       grainDensity: 4,
-      mix: 1.0
+      mix: 1.0,
+      reverse: 0
     }
   },
   {
@@ -95,7 +99,8 @@ export const halfTimePresets = [
       pitchLock: 0,
       grainSize: 180,
       grainDensity: 5,
-      mix: 1.0
+      mix: 1.0,
+      reverse: 0
     }
   },
   {
@@ -112,7 +117,8 @@ export const halfTimePresets = [
       pitchLock: 0,
       grainSize: 220,
       grainDensity: 3,
-      mix: 1.0
+      mix: 1.0,
+      reverse: 0
     }
   },
 
@@ -133,7 +139,8 @@ export const halfTimePresets = [
       pitchLock: 1,
       grainSize: 100,
       grainDensity: 12,
-      mix: 1.0
+      mix: 1.0,
+      reverse: 0
     }
   },
   {
@@ -150,7 +157,8 @@ export const halfTimePresets = [
       pitchLock: 1,
       grainSize: 50,
       grainDensity: 16,
-      mix: 1.0
+      mix: 1.0,
+      reverse: 0
     }
   },
 
@@ -171,7 +179,8 @@ export const halfTimePresets = [
       pitchLock: 0,
       grainSize: 80,
       grainDensity: 14,
-      mix: 1.0
+      mix: 1.0,
+      reverse: 0
     }
   },
   {
@@ -188,7 +197,44 @@ export const halfTimePresets = [
       pitchLock: 1,
       grainSize: 60,
       grainDensity: 16,
-      mix: 1.0
+      mix: 1.0,
+      reverse: 0
+    }
+  },
+  {
+    id: 'reverse-half',
+    name: 'Reverse Half',
+    category: 'Creative',
+    description: 'Backwards playback with half-time stretch',
+    tags: ['reverse', 'backwards', 'creative'],
+    author: 'DAWG Factory',
+    settings: {
+      rate: 0.5,
+      smoothing: 60,
+      pitchShift: -12,
+      pitchLock: 1,
+      grainSize: 120,
+      grainDensity: 8,
+      mix: 1.0,
+      reverse: 1
+    }
+  },
+  {
+    id: 'reverse-glitch',
+    name: 'Reverse Glitch',
+    category: 'Creative',
+    description: 'Backwards glitchy time manipulation',
+    tags: ['reverse', 'glitch', 'backwards', 'creative'],
+    author: 'DAWG Factory',
+    settings: {
+      rate: 0.5,
+      smoothing: 15,
+      pitchShift: -12,
+      pitchLock: 0,
+      grainSize: 70,
+      grainDensity: 14,
+      mix: 1.0,
+      reverse: 1
     }
   }
 ];

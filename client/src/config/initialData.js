@@ -22,12 +22,12 @@ const note = (time, pitch = 'C4', velocity = 100, duration = '16n', patternLengt
     // Default to 1 step if pattern not recognized
     return 1;
   };
-  
+
   const durationSteps = durationToSteps(duration);
-  const audioLengthInSteps = isDrum 
+  const audioLengthInSteps = isDrum
     ? Math.max(1, patternLength - time) // Drums extend to pattern end
     : durationSteps; // VASynth uses actual duration
-  
+
   return {
     id: `note_${time}_${pitch}_${Math.random().toString(36).substring(7)}`,
     time,
@@ -191,7 +191,7 @@ const boomBapPattern = {
     { t: 224, p: 'F2', d: '4n' }, { t: 224, p: 'A2', d: '4n' }, { t: 224, p: 'C3', d: '4n' },
     { t: 240, p: 'G2', d: '4n' }, { t: 240, p: 'B2', d: '4n' }, { t: 240, p: 'D3', d: '4n' }
   ].map(n => note(n.t, n.p, 30, n.d, BOOM_BAP_PATTERN_LENGTH, false)), // Very quiet, just atmosphere
-  
+
   // ✅ BASS: Rhythmic bassline with varied durations
   bass: [
     // Bar 1-4: Root notes with rhythm
@@ -577,7 +577,7 @@ export const initialInstruments = [
       { url: '/audio/samples/instruments/piano/C6.ogg', note: 'C6', midiNote: 84 },
       { url: '/audio/samples/instruments/piano/C7.ogg', note: 'C7', midiNote: 96 },
       { url: '/audio/samples/instruments/piano/C8.ogg', note: 'C8', midiNote: 108 }
-    ]
+    ],
   }),
 
   // === VASYNTH INSTRUMENTS (Classic) ===

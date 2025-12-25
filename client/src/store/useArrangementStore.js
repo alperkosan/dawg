@@ -6,6 +6,7 @@ import { create } from 'zustand';
 import { nanoid } from 'nanoid';
 // ✅ Empty project - no initial data
 import { AudioContextService } from '@/lib/services/AudioContextService';
+import { AudioEngineGlobal } from '@/lib/core/AudioEngineGlobal';
 import { storeManager } from './StoreManager';
 import { usePlaybackStore } from './usePlaybackStore';
 import { audioAssetManager } from '@/lib/audio/AudioAssetManager.js';
@@ -138,7 +139,7 @@ const arrangementStoreOrchestrator = (config) => (set, get, api) => {
     originalSetActivePatternId(...args);
     // Immediate for pattern changes (more critical)
     usePlaybackStore.getState().updateLoopLength();
-    AudioContextService.reschedule();
+    AudioEngineGlobal.get()?.playbackManager?.reschedule('active-pattern-change');
   };
 
   return store;
@@ -152,7 +153,7 @@ export const useArrangementStore = create(arrangementStoreOrchestrator((set, get
   patternOrder: [], // ✅ Empty project - start with no pattern order
   tracks: [], // ✅ Empty project - start with no tracks
   clips: [], // ✅ Empty project - start with no clips
-  activePatternId: 'pattern2',  // ✅ Boom Bap showcase pattern (16 bars)
+  activePatternId: null, // ✅ Start with no active pattern (will be set by deserializer)
   songLength: 128, // bar cinsinden
   zoomX: 1,
   nextPatternNumber: 5,
@@ -160,38 +161,38 @@ export const useArrangementStore = create(arrangementStoreOrchestrator((set, get
   // ========================================================
   // === ARRANGEMENT PANEL STATE (New - from useArrangementV2Store) ===
   // ========================================================
-  
+
   // Arrangement tracks (separate from pattern tracks)
   arrangementTracks: [], // ✅ Empty project - start with no arrangement tracks
-  
+
   // Arrangement clips (separate from pattern clips)
   arrangementClips: [],
-  
+
   // Selection
   selectedClipIds: [],
-  
+
   // Clipboard
   clipboard: null,
-  
+
   // Markers
   arrangementMarkers: [],
-  
+
   // Loop regions (arrangement-specific, separate from pattern loop regions)
   arrangementLoopRegions: [],
-  
+
   // Viewport
   viewportOffset: { x: 0, y: 0 },
   zoom: { x: 1, y: 1 },
   snapEnabled: true,
   snapSize: 0.25, // 1/16 note in beats
-  
+
   // History
   history: {
     past: [],
     future: [],
     maxSize: 50
   },
-  
+
   // Audio engine integration
   _audioEngine: null,
   _trackChannelMap: new Map(), // Map track IDs to mixer channel IDs
@@ -202,13 +203,13 @@ export const useArrangementStore = create(arrangementStoreOrchestrator((set, get
   // ========================================================
   // === PATTERN MANAGEMENT ===
   // ========================================================
-  nextPatternNumber: 5, // For creating pattern-5, pattern-6, etc.
+  nextPatternNumber: 1, // For creating pattern-1, pattern-2, etc.
 
   // --- EYLEMLER (ACTIONS) ---
 
   setActivePatternId: (patternId) => {
     const state = get();
-    
+
     // ✅ FIX: Ensure pattern exists, if not, select first available pattern
     if (!state.patterns[patternId]) {
       const availablePatterns = state.patternOrder.filter(id => state.patterns[id]);
@@ -222,7 +223,7 @@ export const useArrangementStore = create(arrangementStoreOrchestrator((set, get
         return;
       }
     }
-    
+
     if (state.activePatternId === patternId) return;
     set({ activePatternId: patternId });
     // Orkestratör bu eylemi yakalayıp gerekli diğer işlemleri yapacak.
@@ -242,7 +243,7 @@ export const useArrangementStore = create(arrangementStoreOrchestrator((set, get
       console.warn('❌ Pattern not found:', patternId);
       return state;
     });
-     // Orkestratör bu eylemi de yakalayacak.
+    // Orkestratör bu eylemi de yakalayacak.
   },
 
   // ✅ PHASE 2: Update CC lanes for a pattern
@@ -260,17 +261,17 @@ export const useArrangementStore = create(arrangementStoreOrchestrator((set, get
       return state;
     });
   },
-  
+
   renameActivePattern: (newName) => {
     const { activePatternId } = get();
     if (newName && activePatternId) {
-        set(state => {
-            const newPatterns = { ...state.patterns };
-            if (newPatterns[activePatternId]) {
-                newPatterns[activePatternId].name = newName;
-            }
-            return { patterns: newPatterns };
-        });
+      set(state => {
+        const newPatterns = { ...state.patterns };
+        if (newPatterns[activePatternId]) {
+          newPatterns[activePatternId].name = newName;
+        }
+        return { patterns: newPatterns };
+      });
     }
   },
 
@@ -318,14 +319,14 @@ export const useArrangementStore = create(arrangementStoreOrchestrator((set, get
 
   updateClip: (clipId, newParams) => {
     set(state => ({
-      clips: state.clips.map(clip => 
+      clips: state.clips.map(clip =>
         clip.id === clipId ? { ...clip, ...newParams } : clip
       )
     }));
     // Klip değişikliği şarkı uzunluğunu etkileyebilir.
     usePlaybackStore.getState().updateLoopLength();
   },
-  
+
   setZoomX: (newZoom) => set({ zoomX: Math.max(0.1, Math.min(5, newZoom)) }),
 
   // Loop region management
@@ -541,7 +542,17 @@ export const useArrangementStore = create(arrangementStoreOrchestrator((set, get
    */
   createPattern: (name) => {
     const state = get();
-    const newPatternId = `pattern-${state.nextPatternNumber}`;
+
+    // Find next available pattern number to avoid collisions
+    let nextNumber = state.nextPatternNumber;
+    // Find next available pattern number to avoid collisions
+    while (state.patterns[`pattern-${nextNumber}`]) {
+      nextNumber++;
+    }
+
+    // Ensure the pattern ID doesn't already exist (double-check)
+    let newPatternId = `pattern-${nextNumber}`;
+
     const patternName = name || newPatternId;
 
     // FL Studio Style: Patterns only contain note data
@@ -558,9 +569,11 @@ export const useArrangementStore = create(arrangementStoreOrchestrator((set, get
     set(state => ({
       patterns: { ...state.patterns, [newPatternId]: newPattern },
       patternOrder: [...state.patternOrder, newPatternId],
-      nextPatternNumber: state.nextPatternNumber + 1
+      // ✅ FIX: Update nextPatternNumber to be at least nextNumber + 1
+      nextPatternNumber: Math.max(state.nextPatternNumber, nextNumber + 1)
     }));
 
+    console.log(`✅ Created pattern: ${newPatternId} (nextPatternNumber: ${Math.max(state.nextPatternNumber, nextNumber + 1)})`);
     return newPatternId;
   },
 
@@ -720,7 +733,7 @@ export const useArrangementStore = create(arrangementStoreOrchestrator((set, get
     get().pushHistory({ type: 'ADD_ARRANGEMENT_TRACK', trackId: newTrack.id });
 
     // Sync to audio engine if initialized
-    const audioEngine = get()._audioEngine || AudioContextService.getAudioEngine();
+    const audioEngine = get()._audioEngine || AudioEngineGlobal.get();
     if (audioEngine) {
       await get()._syncArrangementTracksToAudioEngine();
     }
@@ -742,14 +755,14 @@ export const useArrangementStore = create(arrangementStoreOrchestrator((set, get
       arrangementClips: updatedClips
     });
 
-    get().pushHistory({ 
-      type: 'REMOVE_ARRANGEMENT_TRACK', 
-      track: removedTrack, 
-      clips: clips.filter(c => c.trackId === trackId) 
+    get().pushHistory({
+      type: 'REMOVE_ARRANGEMENT_TRACK',
+      track: removedTrack,
+      clips: clips.filter(c => c.trackId === trackId)
     });
 
     // Remove mixer insert from audio engine
-    const audioEngine = get()._audioEngine || AudioContextService.getAudioEngine();
+    const audioEngine = get()._audioEngine || AudioEngineGlobal.get();
     const trackChannelMap = get()._trackChannelMap;
     const insertId = trackChannelMap.get(trackId);
 
@@ -768,7 +781,7 @@ export const useArrangementStore = create(arrangementStoreOrchestrator((set, get
     });
 
     // Sync to audio engine if initialized
-    const audioEngine = get()._audioEngine || AudioContextService.getAudioEngine();
+    const audioEngine = get()._audioEngine || AudioEngineGlobal.get();
     const trackChannelMap = get()._trackChannelMap;
     const insertId = trackChannelMap.get(trackId);
 
@@ -865,7 +878,7 @@ export const useArrangementStore = create(arrangementStoreOrchestrator((set, get
     get().pushHistory({ type: 'UPDATE_ARRANGEMENT_CLIP', clipId, oldState: oldClip, newState: updates });
 
     // Reschedule only the updated clip
-    const audioEngine = get()._audioEngine || AudioContextService.getAudioEngine();
+    const audioEngine = get()._audioEngine || AudioEngineGlobal.get();
     if (audioEngine?.playbackManager && updatedClip) {
       audioEngine.playbackManager.rescheduleClipEvents(updatedClip);
     }
@@ -935,7 +948,7 @@ export const useArrangementStore = create(arrangementStoreOrchestrator((set, get
       const splitPointSteps = Math.floor(splitPoint * 4);
       const currentPatternOffset = clip.patternOffset || 0;
       rightClip.patternOffset = currentPatternOffset + splitPointSteps;
-      
+
       // ✅ DEBUG: Log pattern offset calculation for debugging
       console.log(`✂️ Split pattern clip: ${clip.id}`, {
         splitPointBeats: splitPoint,
@@ -956,11 +969,11 @@ export const useArrangementStore = create(arrangementStoreOrchestrator((set, get
       arrangementClips: [...get().arrangementClips, leftClip, rightClip]
     });
 
-    get().pushHistory({ 
-      type: 'SPLIT_ARRANGEMENT_CLIP', 
-      originalClip: clip, 
-      leftClipId: leftClip.id, 
-      rightClipId: rightClip.id 
+    get().pushHistory({
+      type: 'SPLIT_ARRANGEMENT_CLIP',
+      originalClip: clip,
+      leftClipId: leftClip.id,
+      rightClipId: rightClip.id
     });
 
     return [leftClip.id, rightClip.id];
@@ -1040,8 +1053,8 @@ export const useArrangementStore = create(arrangementStoreOrchestrator((set, get
 
   addArrangementMarker: (time, label, color) => {
     const marker = createMarker(time, label, color);
-    set({ 
-      arrangementMarkers: [...get().arrangementMarkers, marker].sort((a, b) => a.time - b.time) 
+    set({
+      arrangementMarkers: [...get().arrangementMarkers, marker].sort((a, b) => a.time - b.time)
     });
     get().pushHistory({ type: 'ADD_ARRANGEMENT_MARKER', markerId: marker.id });
     return marker.id;
@@ -1067,8 +1080,8 @@ export const useArrangementStore = create(arrangementStoreOrchestrator((set, get
 
   addArrangementLoopRegion: async (startTime, endTime, label, color) => {
     const region = createLoopRegion(startTime, endTime, label, color);
-    set({ 
-      arrangementLoopRegions: [...get().arrangementLoopRegions, region].sort((a, b) => a.startTime - b.startTime) 
+    set({
+      arrangementLoopRegions: [...get().arrangementLoopRegions, region].sort((a, b) => a.startTime - b.startTime)
     });
     get().pushHistory({ type: 'ADD_ARRANGEMENT_LOOP_REGION', regionId: region.id });
 
@@ -1206,7 +1219,7 @@ export const useArrangementStore = create(arrangementStoreOrchestrator((set, get
   // =================== AUDIO ENGINE INTEGRATION ===================
 
   _syncArrangementTracksToAudioEngine: async () => {
-    const audioEngine = get()._audioEngine || AudioContextService.getAudioEngine();
+    const audioEngine = get()._audioEngine || AudioEngineGlobal.get();
     const tracks = get().arrangementTracks;
     const trackChannelMap = get()._trackChannelMap;
 

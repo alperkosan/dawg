@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { useDrag } from 'react-dnd';
 import { Folder, FileAudio, ChevronRight, Loader2, Play, Pause } from 'lucide-react';
-import { usePreviewPlayerStore } from '@/store/usePreviewPlayerStore';
 import { useFileBrowserStore } from '@/store/useFileBrowserStore';
+import { getMediaPlayer } from '@/lib/media/MediaPlayer';
 import { DND_TYPES, FILE_SYSTEM_TYPES } from '@/config/constants'; // GÜNCELLENDİ
 
 const DraggableFileNode = ({ node, onContextMenu, children }) => {
@@ -55,24 +55,60 @@ export function FileTreeNode({ node, onContextMenu, onNodeClick, selectedNode, d
     const [isDragOver, setIsDragOver] = useState(false);
     const isSelected = selectedNode?.id === node.id;
 
-    // ✅ FIX: Get player state for UI feedback (individual selectors to avoid infinite loop)
-    const playPreview = usePreviewPlayerStore(state => state.playPreview);
-    const loadingUrl = usePreviewPlayerStore(state => state.loadingUrl);
-    const playingUrl = usePreviewPlayerStore(state => state.playingUrl);
-    const isPlaying = usePreviewPlayerStore(state => state.isPlaying);
-
+    // ✅ FIX: Use MediaPlayer for consistent playback state
+    const [isPlayingNode, setIsPlayingNode] = React.useState(false);
+    const [isLoadingNode, setIsLoadingNode] = React.useState(false);
     const moveNode = useFileBrowserStore(state => state.moveNode);
 
-    const isLoading = loadingUrl === node.url;
-    const isPlayingNode = isPlaying && playingUrl === node.url;
+    // Subscribe to MediaPlayer events for this node's URL
+    React.useEffect(() => {
+      if (node.type !== FILE_SYSTEM_TYPES.FILE || !node.url) {
+        return;
+      }
 
-    const handleNodeClick = (e) => {
+      const mediaPlayer = getMediaPlayer();
+
+      const unsubscribe = mediaPlayer.subscribe(node.url, (event, data) => {
+        switch (event) {
+          case 'play':
+            setIsPlayingNode(true);
+            setIsLoadingNode(false);
+            break;
+          case 'pause':
+          case 'ended':
+            setIsPlayingNode(false);
+            break;
+          case 'loadstart':
+            setIsLoadingNode(true);
+            break;
+          case 'loadedmetadata':
+          case 'error':
+            setIsLoadingNode(false);
+            break;
+        }
+      });
+
+      // Check initial state
+      const state = mediaPlayer.getState();
+      setIsPlayingNode(state.isPlaying && state.url === node.url);
+      setIsLoadingNode(state.isLoading && state.url === node.url);
+
+      return unsubscribe;
+    }, [node.url, node.type]);
+
+    const handleNodeClick = async (e) => {
         e.stopPropagation();
         onNodeClick(node);
         if (node.type === FILE_SYSTEM_TYPES.FOLDER) { // GÜNCELLENDİ
             setIsOpen(!isOpen);
         } else if (node.type === FILE_SYSTEM_TYPES.FILE) { // GÜNCELLENDİ
-            playPreview(node.url);
+            // Use MediaPlayer for consistent playback
+            const mediaPlayer = getMediaPlayer();
+            try {
+                await mediaPlayer.toggle(node.url);
+            } catch (err) {
+                console.error('Failed to play preview:', err);
+            }
         }
     };
 
@@ -160,8 +196,8 @@ export function FileTreeNode({ node, onContextMenu, onNodeClick, selectedNode, d
                 {isFolder ? (
                     <Folder size={16} />
                 ) : (
-                    isLoading ? (
-                        <Loader2 size={16} className="animate-spin text-blue-500" />
+                    isLoadingNode ? (
+                        <Loader2 size={16} className="spinning text-blue-500" />
                     ) : isPlayingNode ? (
                         <Pause size={16} className="text-green-500" />
                     ) : (
@@ -169,9 +205,9 @@ export function FileTreeNode({ node, onContextMenu, onNodeClick, selectedNode, d
                     )
                 )}
             </div>
-            <span className={`file-node__name ${isPlayingNode ? 'text-green-500 font-medium' : ''} ${isLoading ? 'text-blue-500' : ''}`}>
+            <span className={`file-node__name ${isPlayingNode ? 'text-green-500 font-medium' : ''} ${isLoadingNode ? 'text-blue-500' : ''}`}>
                 {node.name}
-                {isLoading && <span className="ml-2 text-xs opacity-70">(Yükleniyor...)</span>}
+                {isLoadingNode && <span className="ml-2 text-xs opacity-70">(Yükleniyor...)</span>}
             </span>
         </div>
     );

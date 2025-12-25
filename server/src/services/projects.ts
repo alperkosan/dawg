@@ -28,7 +28,7 @@ export async function createProject(data: {
   projectData: Record<string, any>;
 }): Promise<Project> {
   const db = getDatabase();
-  
+
   const result = await db.query<Project>(
     `INSERT INTO projects (
       user_id, title, description, thumbnail_url, bpm, key_signature,
@@ -55,7 +55,7 @@ export async function createProject(data: {
   );
 
   const project = result.rows[0];
-  
+
   // Add owner as collaborator
   await db.query(
     `INSERT INTO project_collaborators (project_id, user_id, role, can_edit, can_delete, can_share, can_export)
@@ -72,7 +72,7 @@ export async function createProject(data: {
  */
 export async function findProjectById(id: string, includeDeleted: boolean = false): Promise<Project | null> {
   const db = getDatabase();
-  
+
   let query = `
     SELECT id, user_id, title, description, thumbnail_url, bpm, key_signature,
            time_signature, project_data, version, is_public, is_unlisted,
@@ -82,11 +82,11 @@ export async function findProjectById(id: string, includeDeleted: boolean = fals
     FROM projects
     WHERE id = $1
   `;
-  
+
   if (!includeDeleted) {
     query += ' AND deleted_at IS NULL';
   }
-  
+
   const result = await db.query<Project>(query, [id]);
   return result.rows[0] || null;
 }
@@ -96,7 +96,7 @@ export async function findProjectById(id: string, includeDeleted: boolean = fals
  */
 export async function findProjectByShareToken(token: string): Promise<Project | null> {
   const db = getDatabase();
-  
+
   const result = await db.query<Project>(
     `SELECT id, user_id, title, description, thumbnail_url, bpm, key_signature,
             time_signature, project_data, version, is_public, is_unlisted,
@@ -107,7 +107,7 @@ export async function findProjectByShareToken(token: string): Promise<Project | 
      WHERE share_token = $1 AND deleted_at IS NULL`,
     [token]
   );
-  
+
   return result.rows[0] || null;
 }
 
@@ -133,11 +133,11 @@ export async function updateProject(
   }
 ): Promise<Project> {
   const db = getDatabase();
-  
+
   const updates: string[] = [];
   const values: any[] = [];
   let paramIndex = 1;
-  
+
   if (data.title !== undefined) {
     updates.push(`title = $${paramIndex++}`);
     values.push(data.title);
@@ -175,7 +175,7 @@ export async function updateProject(
     updates.push(`is_unlisted = $${paramIndex++}`);
     values.push(data.isUnlisted);
   }
-  
+
   // ✅ NEW: Preview audio fields
   if (data.previewAudioUrl !== undefined) {
     updates.push(`preview_audio_url = $${paramIndex++}`);
@@ -193,11 +193,11 @@ export async function updateProject(
     updates.push(`preview_audio_status = $${paramIndex++}`);
     values.push(data.previewAudioStatus);
   }
-  
+
   if (updates.length === 0) {
     throw new Error('No fields to update');
   }
-  
+
   // ✅ DISABLED: Client-side render is now used instead of Puppeteer
   // Audio render is now handled client-side in the publish modal
   // This allows user interaction for AudioContext resume
@@ -205,7 +205,7 @@ export async function updateProject(
   let shouldTriggerRender = false;
   let wasPrivate = false;
   let hasReadyPreview = false;
-  
+
   // Only trigger Puppeteer render if explicitly requested (not for normal publish)
   if (data.isPublic === true && (data as any).triggerPuppeteerRender === true) {
     // Get previous project state BEFORE the update
@@ -213,18 +213,18 @@ export async function updateProject(
       `SELECT is_public, preview_audio_status FROM projects WHERE id = $1 AND deleted_at IS NULL`,
       [id]
     );
-    
+
     if (previousProjectResult.rows.length > 0) {
       const previousProject = previousProjectResult.rows[0];
       wasPrivate = !previousProject.is_public;
       hasReadyPreview = previousProject.preview_audio_status === 'ready';
-      
+
       logger.info(`🎬 [PUBLISH] Project ${id} publish check (BEFORE update):`, {
         wasPrivate,
         hasReadyPreview,
         previousStatus: previousProject.preview_audio_status,
       });
-      
+
       // Trigger render if: project was private OR doesn't have ready preview
       shouldTriggerRender = wasPrivate || !hasReadyPreview;
     } else {
@@ -233,10 +233,10 @@ export async function updateProject(
   } else if (data.isPublic === true) {
     logger.info(`ℹ️ [PUBLISH] Project ${id} is being published - client-side render will handle audio preview`);
   }
-  
+
   updates.push(`updated_at = NOW()`);
   values.push(id);
-  
+
   const result = await db.query<Project>(
     `UPDATE projects
      SET ${updates.join(', ')}
@@ -248,13 +248,13 @@ export async function updateProject(
                preview_audio_duration, preview_audio_rendered_at, preview_audio_status`,
     values
   );
-  
+
   if (result.rows.length === 0) {
     throw new Error('Project not found');
   }
-  
+
   const updatedProject = result.rows[0];
-  
+
   // ✅ NEW: Delete preview audio from CDN when project is unpublished
   if (data.isPublic === false) {
     // Get previous project state to check if it had a preview audio
@@ -262,11 +262,11 @@ export async function updateProject(
       `SELECT preview_audio_url FROM projects WHERE id = $1 AND deleted_at IS NULL`,
       [id]
     );
-    
+
     if (previousProjectResult.rows.length > 0) {
       const previousProject = previousProjectResult.rows[0];
       const previewAudioUrl = previousProject.preview_audio_url;
-      
+
       if (previewAudioUrl) {
         try {
           // Extract storage key from CDN URL
@@ -274,7 +274,7 @@ export async function updateProject(
           // - https://dawg.b-cdn.net/project-previews/{id}/{filename} (pull zone)
           // - https://storage.bunnycdn.com/{zone}/project-previews/{id}/{filename} (storage API)
           let storageKey: string | null = null;
-          
+
           // Try to extract storage key from URL
           // Look for "project-previews/" pattern in URL
           const urlMatch = previewAudioUrl.match(/project-previews\/[^?]+/);
@@ -287,7 +287,7 @@ export async function updateProject(
             storageKey = `project-previews/${id}/${id}-preview.wav`;
             logger.info(`🔍 [UNPUBLISH] Constructed storage key from project ID: ${storageKey}`);
           }
-          
+
           if (storageKey) {
             logger.info(`🗑️ [UNPUBLISH] Deleting preview audio from CDN for project ${id}: ${storageKey}`);
             const { storageService } = await import('./storage.js');
@@ -299,7 +299,7 @@ export async function updateProject(
           // Continue with unpublish even if CDN deletion fails
         }
       }
-      
+
       // Clear preview audio fields in database
       try {
         await db.query(
@@ -317,7 +317,7 @@ export async function updateProject(
       }
     }
   }
-  
+
   // ✅ NEW: Trigger audio render if project is made public
   if (shouldTriggerRender) {
     // Project just became public OR doesn't have ready preview - trigger render in background
@@ -348,7 +348,7 @@ export async function updateProject(
   } else if (data.isPublic === true) {
     logger.info(`ℹ️ [PUBLISH] Project ${id} was already public with ready preview, skipping render trigger`);
   }
-  
+
   return updatedProject;
 }
 
@@ -357,14 +357,14 @@ export async function updateProject(
  */
 export async function deleteProject(id: string): Promise<void> {
   const db = getDatabase();
-  
+
   const result = await db.query(
     `UPDATE projects
      SET deleted_at = NOW()
      WHERE id = $1 AND deleted_at IS NULL`,
     [id]
   );
-  
+
   if (result.rowCount === 0) {
     throw new Error('Project not found');
   }
@@ -383,42 +383,51 @@ export async function listProjects(options: {
   sortOrder?: 'asc' | 'desc';
 }): Promise<{ projects: Project[]; total: number }> {
   const db = getDatabase();
-  
+
   const page = options.page || 1;
   const limit = options.limit || 20;
   const offset = (page - 1) * limit;
   const sortBy = options.sortBy || 'created_at';
   const sortOrder = options.sortOrder || 'desc';
-  
+
   const conditions: string[] = ['deleted_at IS NULL'];
   const values: any[] = [];
   let paramIndex = 1;
-  
+
   if (options.userId) {
     conditions.push(`user_id = $${paramIndex++}`);
     values.push(options.userId);
   }
-  
+
   if (options.isPublic !== undefined) {
     conditions.push(`is_public = $${paramIndex++}`);
     values.push(options.isPublic);
   }
-  
+
   if (options.search) {
     conditions.push(`(title ILIKE $${paramIndex} OR description ILIKE $${paramIndex})`);
     values.push(`%${options.search}%`);
     paramIndex++;
   }
-  
+
   const whereClause = conditions.join(' AND ');
-  
+
+  logger.info('📊 [DB_LIST_PROJECTS] Query construction:', {
+    conditions,
+    values,
+    limit,
+    offset,
+    sortBy,
+    sortOrder
+  });
+
   // Get total count
   const countResult = await db.query(
     `SELECT COUNT(*) as total FROM projects WHERE ${whereClause}`,
     values
   );
   const total = parseInt(countResult.rows[0].total, 10);
-  
+
   // Get projects
   const projectsResult = await db.query<Project>(
     `SELECT id, user_id, title, description, thumbnail_url, bpm, key_signature,
@@ -432,7 +441,7 @@ export async function listProjects(options: {
      LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
     [...values, limit, offset]
   );
-  
+
   return {
     projects: projectsResult.rows,
     total,
@@ -444,22 +453,22 @@ export async function listProjects(options: {
  */
 export async function canAccessProject(userId: string | null, projectId: string): Promise<boolean> {
   const db = getDatabase();
-  
+
   const project = await findProjectById(projectId);
   if (!project) {
     return false;
   }
-  
+
   // Owner can always access
   if (project.user_id === userId) {
     return true;
   }
-  
+
   // Public projects
   if (project.is_public) {
     return true;
   }
-  
+
   // Check if user is collaborator
   if (userId) {
     const collaboratorResult = await db.query(
@@ -467,12 +476,12 @@ export async function canAccessProject(userId: string | null, projectId: string)
        WHERE project_id = $1 AND user_id = $2 AND is_active = true`,
       [projectId, userId]
     );
-    
+
     if (collaboratorResult.rows.length > 0) {
       return true;
     }
   }
-  
+
   return false;
 }
 
@@ -481,28 +490,28 @@ export async function canAccessProject(userId: string | null, projectId: string)
  */
 export async function canEditProject(userId: string, projectId: string): Promise<boolean> {
   const db = getDatabase();
-  
+
   const project = await findProjectById(projectId);
   if (!project) {
     return false;
   }
-  
+
   // Owner can always edit
   if (project.user_id === userId) {
     return true;
   }
-  
+
   // Check collaborator permissions
   const collaboratorResult = await db.query(
     `SELECT can_edit FROM project_collaborators
      WHERE project_id = $1 AND user_id = $2 AND is_active = true`,
     [projectId, userId]
   );
-  
+
   if (collaboratorResult.rows.length > 0) {
     return collaboratorResult.rows[0].can_edit;
   }
-  
+
   return false;
 }
 
@@ -511,18 +520,18 @@ export async function canEditProject(userId: string, projectId: string): Promise
  */
 export async function duplicateProject(projectId: string, userId: string, newTitle?: string): Promise<Project> {
   const db = getDatabase();
-  
+
   const original = await findProjectById(projectId);
   if (!original) {
     throw new Error('Project not found');
   }
-  
+
   // Check access
   const hasAccess = await canAccessProject(userId, projectId);
   if (!hasAccess) {
     throw new Error('Access denied');
   }
-  
+
   // Create new project
   const newProject = await createProject({
     userId,
@@ -534,7 +543,7 @@ export async function duplicateProject(projectId: string, userId: string, newTit
     timeSignature: original.time_signature || undefined,
     projectData: original.project_data as Record<string, any>,
   });
-  
+
   return newProject;
 }
 

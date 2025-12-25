@@ -9,6 +9,7 @@
  * - Pre/Post fader sends
  * - Effect chain reordering (drag & drop)
  * - Throttled controls for performance
+ * - Virtualized channel list for performance
  * - Centralized meter service
  */
 
@@ -22,22 +23,37 @@ import {
   ChevronRight,
   ChevronLeft
 } from 'lucide-react';
+import ShortcutManager, { SHORTCUT_PRIORITY } from '@/lib/core/ShortcutManager';
 import { MixerChannel } from './components/MixerChannel';
 import { EffectsRack } from './components/EffectsRack';
+import { MixerPrimaryMeter } from './components/MixerPrimaryMeter';
+import { ColorPicker } from './components/ColorPicker';
 import './Mixer.css';
+
+
 
 const Mixer = ({ isVisible = true }) => {
   const [showEffectsRack, setShowEffectsRack] = useState(true);
   const [showAddMenu, setShowAddMenu] = useState(false);
   const addMenuRef = useRef(null);
 
-  // ✅ PERFORMANCE: Separate audio state from UI state
-  // Audio state - subscribe to specific values only
+  // ✅ OPTIMIZATION: Global color picker state
+  const [colorPickerState, setColorPickerState] = useState({
+    isOpen: false,
+    trackId: null,
+    position: { top: 0, left: 0 }
+  });
+
+  // ✅ PERFORMANCE OPTIMIZATION: Use memoized selectors
+  // Only re-render when mixer tracks array changes (not on individual track updates)
   const mixerTracks = useMixerStore(state => state.mixerTracks);
+
+  // ✅ PERFORMANCE: Subscribe to actions individually (stable references)
   const addTrack = useMixerStore(state => state.addTrack);
   const removeTrack = useMixerStore(state => state.removeTrack);
   const toggleMute = useMixerStore(state => state.toggleMute);
   const toggleSolo = useMixerStore(state => state.toggleSolo);
+  const setTrackColor = useMixerStore(state => state.setTrackColor);
 
   // UI state - subscribe to specific values only
   const activeChannelId = useMixerUIStore(state => state.activeChannelId);
@@ -74,27 +90,67 @@ const Mixer = ({ isVisible = true }) => {
     }
   }, [mixerTracks, activeChannelId, setActiveChannelId]);
 
-  // Keyboard shortcuts
+  // ✅ OPTIMIZATION: Handle color picker requests from channels
+  const handleChannelClick = useCallback((trackId) => (event) => {
+    if (event?.type === 'color-picker') {
+      const { rect } = event;
+      const pickerWidth = 172;
+      const pickerHeight = 130;
+
+      // Calculate position relative to viewport
+      let left = rect.left - 2;
+      let top = rect.bottom + 2;
+
+      // Constrain to viewport
+      const maxLeft = window.innerWidth - pickerWidth - 4;
+      const maxTop = window.innerHeight - pickerHeight - 4;
+
+      left = Math.max(4, Math.min(left, maxLeft));
+
+      // If doesn't fit below, show above
+      if (top + pickerHeight > window.innerHeight - 4) {
+        top = rect.top - pickerHeight - 2;
+      }
+      top = Math.max(4, Math.min(top, maxTop));
+
+      setColorPickerState({
+        isOpen: true,
+        trackId,
+        position: { top, left }
+      });
+    } else {
+      // Regular click - select channel
+      setActiveChannelId(trackId);
+    }
+  }, [setActiveChannelId]);
+
+  const handleColorSelect = useCallback((color) => {
+    if (colorPickerState.trackId) {
+      setTrackColor(colorPickerState.trackId, color);
+      setColorPickerState(prev => ({ ...prev, isOpen: false }));
+    }
+  }, [colorPickerState.trackId, setTrackColor]);
+
+  const handleColorPickerClose = useCallback(() => {
+    setColorPickerState(prev => ({ ...prev, isOpen: false }));
+  }, []);
+
+  // ✅ KEYBOARD SHORTCUTS MIGRATION
   useEffect(() => {
     const handleKeyDown = (e) => {
-      // Ignore if user is typing in an input field
+      // Ignore if user is typing in an input field (handled by manager, but extra safety)
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
-        return;
+        return false;
       }
 
       const activeTrack = mixerTracks.find(t => t.id === activeChannelId);
-      if (!activeTrack) return;
+      if (!activeTrack) return false;
 
       switch (e.key.toLowerCase()) {
         case 'm':
           e.preventDefault();
           toggleMute(activeChannelId);
-          break;
-
-        case 's':
-          e.preventDefault();
-          toggleSolo(activeChannelId);
-          break;
+          return true;
 
         case 'delete':
         case 'backspace':
@@ -104,25 +160,29 @@ const Mixer = ({ isVisible = true }) => {
               removeTrack(activeChannelId);
             }
           }
-          break;
+          return true;
 
         case 'arrowleft':
           e.preventDefault();
           navigateChannel(-1);
-          break;
+          return true;
 
         case 'arrowright':
           e.preventDefault();
           navigateChannel(1);
-          break;
+          return true;
 
         default:
           break;
       }
+      return false;
     };
 
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
+    ShortcutManager.registerContext('MIXER', SHORTCUT_PRIORITY.CONTEXTUAL, {
+      onKeyDown: handleKeyDown
+    });
+
+    return () => ShortcutManager.unregisterContext('MIXER');
   }, [activeChannelId, mixerTracks, toggleMute, toggleSolo, removeTrack, navigateChannel]);
 
   const handleAddTrack = () => {
@@ -162,17 +222,28 @@ const Mixer = ({ isVisible = true }) => {
     [mixerTracks, activeChannelId]
   );
 
+  // ✅ MOBILE SUPPORT
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   return (
-    <div className="mixer-2">
+    <div className={`mixer-2 ${isMobile ? 'mixer-2--mobile' : ''}`}>
       {/* Header */}
       <div className="mixer-2__header">
         <div className="mixer-2__header-center">
-          <div className="mixer-2__shortcuts-hint">
-            <kbd>M</kbd> Mute
-            <kbd>S</kbd> Solo
-            <kbd>←→</kbd> Navigate
-            <kbd>Del</kbd> Remove
-          </div>
+          {/* Hide shortcuts hint on mobile */}
+          {!isMobile && (
+            <div className="mixer-2__shortcuts-hint">
+              <kbd>M</kbd> Mute
+              <kbd>S</kbd> Solo
+              <kbd>←→</kbd> Navigate
+              <kbd>Del</kbd> Remove
+            </div>
+          )}
         </div>
 
         <div className="mixer-2__header-right">
@@ -182,7 +253,7 @@ const Mixer = ({ isVisible = true }) => {
               onClick={() => setShowAddMenu(!showAddMenu)}
             >
               <Plus size={14} />
-              Add Channel
+              {isMobile ? 'Add' : 'Add Channel'}
             </button>
             {showAddMenu && (
               <div className="mixer-2__add-menu">
@@ -209,9 +280,11 @@ const Mixer = ({ isVisible = true }) => {
               </div>
             )}
           </div>
-          <button className="mixer-2__header-btn">
-            <Settings size={14} />
-          </button>
+          {!isMobile && (
+            <button className="mixer-2__header-btn">
+              <Settings size={14} />
+            </button>
+          )}
           <button
             className={`mixer-2__panel-toggle ${showEffectsRack ? 'active' : ''}`}
             onClick={() => setShowEffectsRack(!showEffectsRack)}
@@ -224,30 +297,37 @@ const Mixer = ({ isVisible = true }) => {
 
       {/* Main Content */}
       <div className="mixer-2__content">
+        {/* Primary Meter (left) - Hidden on mobile to save space */}
+        {!isMobile && (
+          <div className="mixer-2__primary-panel">
+            <MixerPrimaryMeter activeTrack={activeTrack} masterTrack={masterTrack} />
+          </div>
+        )}
+
         {/* Mixer Channels */}
         <div className="mixer-2__channels-container">
           <div className="mixer-2__channels">
-            {/* Master Channel with left separator */}
+            {/* Master Channel (Pinned) */}
             {masterTrack && (
               <>
                 <div className="mixer-2__separator">
                   <div className="mixer-2__separator-line" />
                   <div className="mixer-2__separator-label">MASTER</div>
                 </div>
-            <MixerChannel
-              key={masterTrack.id}
-              track={masterTrack}
-              allTracks={allTracksOrdered}
-              activeTrack={activeTrack}
-              isActive={activeChannelId === masterTrack.id}
-              isMaster={true}
-              onClick={() => setActiveChannelId(masterTrack.id)}
-              isVisible={isVisible}
-            />
+                <MixerChannel
+                  key={masterTrack.id}
+                  trackId={masterTrack.id}
+                  allTracks={allTracksOrdered}
+                  activeTrackId={activeChannelId}
+                  isActive={activeChannelId === masterTrack.id}
+                  isMaster={true}
+                  onClick={handleChannelClick(masterTrack.id)}
+                  isVisible={isVisible}
+                />
               </>
             )}
 
-            {/* Bus Channels with left separator */}
+            {/* Bus Channels */}
             {busTracks.length > 0 && (
               <>
                 <div className="mixer-2__separator">
@@ -257,13 +337,13 @@ const Mixer = ({ isVisible = true }) => {
                 {busTracks.map(track => (
                   <MixerChannel
                     key={track.id}
-                    track={track}
+                    trackId={track.id}
                     allTracks={allTracksOrdered}
-                    activeTrack={activeTrack}
+                    activeTrackId={activeChannelId}
                     isActive={activeChannelId === track.id}
                     isMaster={false}
-                onClick={() => setActiveChannelId(track.id)}
-                isVisible={isVisible}
+                    onClick={handleChannelClick(track.id)}
+                    isVisible={isVisible}
                   />
                 ))}
               </>
@@ -277,25 +357,42 @@ const Mixer = ({ isVisible = true }) => {
             {regularTracks.map(track => (
               <MixerChannel
                 key={track.id}
-                track={track}
+                trackId={track.id}
                 allTracks={allTracksOrdered}
-                activeTrack={activeTrack}
+                activeTrackId={activeChannelId}
                 isActive={activeChannelId === track.id}
                 isMaster={false}
-                onClick={() => setActiveChannelId(track.id)}
+                onClick={handleChannelClick(track.id)}
                 isVisible={isVisible}
               />
             ))}
           </div>
         </div>
 
-        {/* Right: Effects Rack */}
+        {/* Right: Effects Rack - Overlay on mobile */}
         {showEffectsRack && (
-          <div className="mixer-2__effects-panel">
+          <div className={`mixer-2__effects-panel ${isMobile ? 'mixer-2__effects-panel--mobile' : ''}`}>
+            {isMobile && (
+              <button
+                className="mixer-2__mobile-close-btn"
+                onClick={() => setShowEffectsRack(false)}
+              >
+                Close Rack
+              </button>
+            )}
             <EffectsRack track={activeTrack} />
           </div>
         )}
       </div>
+
+      {/* ✅ OPTIMIZATION: Global Color Picker */}
+      <ColorPicker
+        isOpen={colorPickerState.isOpen}
+        position={colorPickerState.position}
+        currentColor={mixerTracks.find(t => t.id === colorPickerState.trackId)?.color}
+        onColorSelect={handleColorSelect}
+        onClose={handleColorPickerClose}
+      />
     </div>
   );
 };

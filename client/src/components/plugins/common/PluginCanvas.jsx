@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useLayoutEffect } from 'react';
-import { PluginVisualizerAPI } from '@/lib/visualization/PluginVisualizerAPI';
+import { PluginVisualizerAPI } from '@/features/visualization/engine/PluginVisualizerAPI';
 
 /**
  * PLUGIN CANVAS WRAPPER

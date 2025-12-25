@@ -1,6 +1,6 @@
 // lib/core/TimelineControllerSingleton.js
 import { BaseSingleton } from './singletons/BaseSingleton.js';
-import { AudioContextService } from '../services/AudioContextService.js';
+import { AudioEngineGlobal } from './AudioEngineGlobal.js';
 import { TimelineController } from './TimelineController.js';
 
 /**
@@ -23,7 +23,14 @@ class TimelineControllerSingleton extends BaseSingleton {
   static async _createInstance() {
     console.log('🎯 Creating TimelineController singleton...');
 
-    const audioEngine = AudioContextService.getAudioEngine();
+    // Wait slightly if engine is not ready (retry logic could be here, but for now we trust Global check)
+    let audioEngine = AudioEngineGlobal.get();
+
+    // Quick retry just in case it's in the process of being set
+    if (!audioEngine && typeof window !== 'undefined') {
+      audioEngine = window.audioEngine;
+    }
+
     if (!audioEngine) {
       throw new Error('AudioEngine not available for TimelineController');
     }

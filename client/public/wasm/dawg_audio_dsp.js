@@ -53,6 +53,202 @@ function passArrayF32ToWasm0(arg, malloc) {
     return ptr;
 }
 
+export function set_panic_hook() {
+    wasm.set_panic_hook();
+}
+
+/**
+ * @param {number} size
+ * @returns {number}
+ */
+export function allocate_f32_array(size) {
+    const ret = wasm.allocate_f32_array(size);
+    return ret >>> 0;
+}
+
+function takeFromExternrefTable0(idx) {
+    const value = wasm.__wbindgen_export_0.get(idx);
+    wasm.__externref_table_dealloc(idx);
+    return value;
+}
+
+const AdsrEnvelopeFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_adsrenvelope_free(ptr >>> 0, 1));
+
+export class AdsrEnvelope {
+
+    static __wrap(ptr) {
+        ptr = ptr >>> 0;
+        const obj = Object.create(AdsrEnvelope.prototype);
+        obj.__wbg_ptr = ptr;
+        AdsrEnvelopeFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        AdsrEnvelopeFinalization.unregister(this);
+        return ptr;
+    }
+
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_adsrenvelope_free(ptr, 0);
+    }
+    /**
+     * @returns {number}
+     */
+    get attack_time() {
+        const ret = wasm.__wbg_get_adsrenvelope_attack_time(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @param {number} arg0
+     */
+    set attack_time(arg0) {
+        wasm.__wbg_set_adsrenvelope_attack_time(this.__wbg_ptr, arg0);
+    }
+    /**
+     * @returns {number}
+     */
+    get decay_time() {
+        const ret = wasm.__wbg_get_adsrenvelope_decay_time(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @param {number} arg0
+     */
+    set decay_time(arg0) {
+        wasm.__wbg_set_adsrenvelope_decay_time(this.__wbg_ptr, arg0);
+    }
+    /**
+     * @returns {number}
+     */
+    get sustain_level() {
+        const ret = wasm.__wbg_get_adsrenvelope_sustain_level(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @param {number} arg0
+     */
+    set sustain_level(arg0) {
+        wasm.__wbg_set_adsrenvelope_sustain_level(this.__wbg_ptr, arg0);
+    }
+    /**
+     * @returns {number}
+     */
+    get release_time() {
+        const ret = wasm.__wbg_get_adsrenvelope_release_time(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @param {number} arg0
+     */
+    set release_time(arg0) {
+        wasm.__wbg_set_adsrenvelope_release_time(this.__wbg_ptr, arg0);
+    }
+    /**
+     * @param {number} sample_rate
+     * @returns {AdsrEnvelope}
+     */
+    static new(sample_rate) {
+        const ret = wasm.adsrenvelope_new(sample_rate);
+        return AdsrEnvelope.__wrap(ret);
+    }
+    /**
+     * @param {number} attack
+     * @param {number} decay
+     * @param {number} sustain
+     * @param {number} release
+     */
+    set_params(attack, decay, sustain, release) {
+        wasm.adsrenvelope_set_params(this.__wbg_ptr, attack, decay, sustain, release);
+    }
+    trigger() {
+        wasm.adsrenvelope_trigger(this.__wbg_ptr);
+    }
+    release() {
+        wasm.adsrenvelope_release(this.__wbg_ptr);
+    }
+    /**
+     * @returns {number}
+     */
+    process() {
+        const ret = wasm.adsrenvelope_process(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {boolean}
+     */
+    is_active() {
+        const ret = wasm.adsrenvelope_is_active(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * @returns {number}
+     */
+    get_value() {
+        const ret = wasm.adsrenvelope_get_value(this.__wbg_ptr);
+        return ret;
+    }
+}
+if (Symbol.dispose) AdsrEnvelope.prototype[Symbol.dispose] = AdsrEnvelope.prototype.free;
+
+const AudioGraphFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_audiograph_free(ptr >>> 0, 1));
+/**
+ * The main Audio Graph structure exposed to JavaScript.
+ * It acts as the container and conductor for all audio nodes.
+ */
+export class AudioGraph {
+
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        AudioGraphFinalization.unregister(this);
+        return ptr;
+    }
+
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_audiograph_free(ptr, 0);
+    }
+    /**
+     * @param {number} sample_rate
+     */
+    constructor(sample_rate) {
+        const ret = wasm.audiograph_new(sample_rate);
+        this.__wbg_ptr = ret >>> 0;
+        AudioGraphFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+     * Process a block of audio for the entire graph.
+     * This is the entry point called by the AudioWorklet.
+     * @param {Float32Array} output_l
+     * @param {Float32Array} output_r
+     */
+    process_block(output_l, output_r) {
+        var ptr0 = passArrayF32ToWasm0(output_l, wasm.__wbindgen_malloc);
+        var len0 = WASM_VECTOR_LEN;
+        var ptr1 = passArrayF32ToWasm0(output_r, wasm.__wbindgen_malloc);
+        var len1 = WASM_VECTOR_LEN;
+        wasm.audiograph_process_block(this.__wbg_ptr, ptr0, len0, output_l, ptr1, len1, output_r);
+    }
+    /**
+     * Add a test node (just to verify infrastructure)
+     * @returns {number}
+     */
+    add_test_node() {
+        const ret = wasm.audiograph_add_test_node(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+}
+if (Symbol.dispose) AudioGraph.prototype[Symbol.dispose] = AudioGraph.prototype.free;
+
 const BiquadFilterFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_biquadfilter_free(ptr >>> 0, 1));
@@ -104,6 +300,64 @@ export class BiquadFilter {
     }
 }
 if (Symbol.dispose) BiquadFilter.prototype[Symbol.dispose] = BiquadFilter.prototype.free;
+
+const PolySynthFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_polysynth_free(ptr >>> 0, 1));
+
+export class PolySynth {
+
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        PolySynthFinalization.unregister(this);
+        return ptr;
+    }
+
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_polysynth_free(ptr, 0);
+    }
+    /**
+     * @param {number} sample_rate
+     * @param {number} max_voices
+     */
+    constructor(sample_rate, max_voices) {
+        const ret = wasm.polysynth_new(sample_rate, max_voices);
+        this.__wbg_ptr = ret >>> 0;
+        PolySynthFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+     * @param {number} note
+     * @param {number} velocity
+     */
+    trigger_note(note, velocity) {
+        wasm.polysynth_trigger_note(this.__wbg_ptr, note, velocity);
+    }
+    /**
+     * @param {number} note
+     */
+    release_note(note) {
+        wasm.polysynth_release_note(this.__wbg_ptr, note);
+    }
+    /**
+     * @param {number} cutoff
+     * @param {number} q
+     * @param {number} filter_type_idx
+     */
+    set_filter_params(cutoff, q, filter_type_idx) {
+        wasm.polysynth_set_filter_params(this.__wbg_ptr, cutoff, q, filter_type_idx);
+    }
+    /**
+     * @returns {number}
+     */
+    process() {
+        const ret = wasm.polysynth_process(this.__wbg_ptr);
+        return ret;
+    }
+}
+if (Symbol.dispose) PolySynth.prototype[Symbol.dispose] = PolySynth.prototype.free;
 
 const ReverbProcessorFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
@@ -162,6 +416,186 @@ export class ReverbProcessor {
     }
 }
 if (Symbol.dispose) ReverbProcessor.prototype[Symbol.dispose] = ReverbProcessor.prototype.free;
+
+const SamplerFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_sampler_free(ptr >>> 0, 1));
+
+export class Sampler {
+
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        SamplerFinalization.unregister(this);
+        return ptr;
+    }
+
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_sampler_free(ptr, 0);
+    }
+    /**
+     * @param {number} sample_rate
+     */
+    constructor(sample_rate) {
+        const ret = wasm.sampler_new(sample_rate);
+        this.__wbg_ptr = ret >>> 0;
+        SamplerFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+     * Load sample data (Mono or Stereo)
+     * @param {Float32Array} left_channel
+     * @param {Float32Array} right_channel
+     */
+    load_sample(left_channel, right_channel) {
+        const ptr0 = passArrayF32ToWasm0(left_channel, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArrayF32ToWasm0(right_channel, wasm.__wbindgen_malloc);
+        const len1 = WASM_VECTOR_LEN;
+        wasm.sampler_load_sample(this.__wbg_ptr, ptr0, len0, ptr1, len1);
+    }
+    /**
+     * @returns {number}
+     */
+    get_current_right() {
+        const ret = wasm.sampler_get_current_right(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Process next sample (Stereo capable)
+     * @returns {number}
+     */
+    process() {
+        const ret = wasm.sampler_process(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @param {number} attack
+     * @param {number} decay
+     * @param {number} sustain
+     * @param {number} release
+     */
+    set_adsr(attack, decay, sustain, release) {
+        wasm.sampler_set_adsr(this.__wbg_ptr, attack, decay, sustain, release);
+    }
+    /**
+     * @param {number} cutoff
+     * @param {number} q
+     * @param {number} filter_type_idx
+     * @param {boolean} enabled
+     */
+    set_filter(cutoff, q, filter_type_idx, enabled) {
+        wasm.sampler_set_filter(this.__wbg_ptr, cutoff, q, filter_type_idx, enabled);
+    }
+    /**
+     * @param {number} amount
+     */
+    set_bass_boost(amount) {
+        wasm.sampler_set_bass_boost(this.__wbg_ptr, amount);
+    }
+    release() {
+        wasm.sampler_release(this.__wbg_ptr);
+    }
+    play() {
+        wasm.sampler_play(this.__wbg_ptr);
+    }
+    stop() {
+        wasm.sampler_stop(this.__wbg_ptr);
+    }
+    /**
+     * @param {number} speed
+     */
+    set_speed(speed) {
+        wasm.sampler_set_speed(this.__wbg_ptr, speed);
+    }
+    /**
+     * @param {number} position
+     */
+    set_position(position) {
+        wasm.sampler_set_position(this.__wbg_ptr, position);
+    }
+    /**
+     * @param {number} start
+     * @param {number} end
+     */
+    set_range(start, end) {
+        wasm.sampler_set_range(this.__wbg_ptr, start, end);
+    }
+    /**
+     * @returns {number}
+     */
+    get_length() {
+        const ret = wasm.sampler_get_length(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @param {number} start
+     * @param {number} end
+     * @param {boolean} loop_active
+     */
+    set_loop(start, end, loop_active) {
+        wasm.sampler_set_loop(this.__wbg_ptr, start, end, loop_active);
+    }
+    /**
+     * @returns {boolean}
+     */
+    is_playing() {
+        const ret = wasm.sampler_is_playing(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    reset() {
+        wasm.sampler_reset(this.__wbg_ptr);
+    }
+}
+if (Symbol.dispose) Sampler.prototype[Symbol.dispose] = Sampler.prototype.free;
+
+const SimpleDelayFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_simpledelay_free(ptr >>> 0, 1));
+
+export class SimpleDelay {
+
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        SimpleDelayFinalization.unregister(this);
+        return ptr;
+    }
+
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_simpledelay_free(ptr, 0);
+    }
+    /**
+     * @param {number} sample_rate
+     */
+    constructor(sample_rate) {
+        const ret = wasm.simpledelay_new(sample_rate);
+        this.__wbg_ptr = ret >>> 0;
+        SimpleDelayFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+     * @param {number} seconds
+     */
+    set_time(seconds) {
+        wasm.simpledelay_set_time(this.__wbg_ptr, seconds);
+    }
+    /**
+     * @param {number} val
+     */
+    set_feedback(val) {
+        wasm.simpledelay_set_feedback(this.__wbg_ptr, val);
+    }
+    /**
+     * @param {number} val
+     */
+    set_mix(val) {
+        wasm.simpledelay_set_mix(this.__wbg_ptr, val);
+    }
+}
+if (Symbol.dispose) SimpleDelay.prototype[Symbol.dispose] = SimpleDelay.prototype.free;
 
 const ThreeBandEQFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
@@ -254,20 +688,14 @@ export class UnifiedMixerProcessor {
      * * `output_r` - Right channel output buffer
      * * `block_size` - Number of samples per block
      * * `num_channels` - Number of input channels
-     * @param {Float32Array} interleaved_inputs
-     * @param {Float32Array} output_l
-     * @param {Float32Array} output_r
+     * @param {number} interleaved_ptr
+     * @param {number} input_len
+     * @param {number} out_l_ptr
+     * @param {number} out_r_ptr
      * @param {number} block_size
-     * @param {number} num_channels
      */
-    process_mix(interleaved_inputs, output_l, output_r, block_size, num_channels) {
-        const ptr0 = passArrayF32ToWasm0(interleaved_inputs, wasm.__wbindgen_malloc);
-        const len0 = WASM_VECTOR_LEN;
-        var ptr1 = passArrayF32ToWasm0(output_l, wasm.__wbindgen_malloc);
-        var len1 = WASM_VECTOR_LEN;
-        var ptr2 = passArrayF32ToWasm0(output_r, wasm.__wbindgen_malloc);
-        var len2 = WASM_VECTOR_LEN;
-        wasm.unifiedmixerprocessor_process_mix(this.__wbg_ptr, ptr0, len0, ptr1, len1, output_l, ptr2, len2, output_r, block_size, num_channels);
+    process_mix(interleaved_ptr, input_len, out_l_ptr, out_r_ptr, block_size) {
+        wasm.unifiedmixerprocessor_process_mix(this.__wbg_ptr, interleaved_ptr, input_len, out_l_ptr, out_r_ptr, block_size);
     }
     /**
      * Update channel parameters
@@ -316,6 +744,27 @@ export class UnifiedMixerProcessor {
     get_num_channels() {
         const ret = wasm.unifiedmixerprocessor_get_num_channels(this.__wbg_ptr);
         return ret >>> 0;
+    }
+    /**
+     * Add an effect to a channel
+     *
+     * effect_type: 0 = Simple Delay
+     * @param {number} channel_idx
+     * @param {number} effect_type
+     */
+    add_effect(channel_idx, effect_type) {
+        const ret = wasm.unifiedmixerprocessor_add_effect(this.__wbg_ptr, channel_idx, effect_type);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
+    }
+    /**
+     * fast polling of levels
+     * @param {number} levels_ptr
+     * @param {number} len
+     */
+    get_channel_levels(levels_ptr, len) {
+        wasm.unifiedmixerprocessor_get_channel_levels(this.__wbg_ptr, levels_ptr, len);
     }
 }
 if (Symbol.dispose) UnifiedMixerProcessor.prototype[Symbol.dispose] = UnifiedMixerProcessor.prototype.free;
@@ -434,6 +883,11 @@ function __wbg_get_imports() {
     };
     imports.wbg.__wbg_wbindgenthrow_451ec1a8469d7eb6 = function(arg0, arg1) {
         throw new Error(getStringFromWasm0(arg0, arg1));
+    };
+    imports.wbg.__wbindgen_cast_2241b6af4c4b2941 = function(arg0, arg1) {
+        // Cast intrinsic for `Ref(String) -> Externref`.
+        const ret = getStringFromWasm0(arg0, arg1);
+        return ret;
     };
     imports.wbg.__wbindgen_init_externref_table = function() {
         const table = wasm.__wbindgen_export_0;

@@ -1,6 +1,7 @@
 // hooks/usePlaybackControls.js
 import { useState, useEffect, useCallback } from 'react';
 import { AudioContextService } from '@/lib/services/AudioContextService.js';
+import { AudioEngineGlobal } from '@/lib/core/AudioEngineGlobal.js';
 import { PlaybackEngine } from '@/lib/core/PlaybackEngine.js';
 
 /**
@@ -23,7 +24,7 @@ const getPlaybackEngine = async () => {
   }
 
   try {
-    const audioEngine = AudioContextService.getAudioEngine();
+    const audioEngine = AudioEngineGlobal.get();
     if (!audioEngine) {
       console.warn('🎵 Audio engine not available');
       return null;

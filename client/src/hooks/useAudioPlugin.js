@@ -9,7 +9,7 @@
  */
 
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { BaseAudioPlugin } from '@/lib/audio/BaseAudioPlugin';
+import { BaseAudioPlugin } from '@/lib/audio/BaseAudioPlugin.js';
 import { usePlaybackStore } from '@/store/usePlaybackStore';
 
 /**

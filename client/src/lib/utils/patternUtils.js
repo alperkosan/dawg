@@ -29,6 +29,9 @@ export const calculatePatternLoopLength = (pattern, defaultBPM = 120) => {
   };
 
   const getNoteLength = (note) => {
+    if (typeof note?.visualLength === 'number' && note.visualLength > 0) {
+      return note.visualLength;
+    }
     if (typeof note?.length === 'number' && note.length > 0) {
       return note.length;
     }

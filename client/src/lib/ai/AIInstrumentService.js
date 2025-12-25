@@ -4,12 +4,13 @@
  * Yapay zeka tabanlı enstrüman üretim servisi
  * Mock data ile çalışır (API key gelene kadar)
  */
+import { decodeAudioData } from '../utils/audioUtils';
 
 export class AIInstrumentService {
   constructor() {
     this.cache = new Map();
-    this.defaultProvider = 'stability-ai';
-    this.mockMode = true; // Set to false when API key is available
+    this.defaultProvider = 'elevenlabs'; // ✨ Set ElevenLabs as default
+    this.mockMode = false; // ✨ Disable mock mode for real API
   }
 
   /**
@@ -36,38 +37,75 @@ export class AIInstrumentService {
     }
 
     try {
-      // Generate variation prompts
-      const variationPrompts = this.generateVariations(prompt, variations);
-      
-      // Generate audio for each variation
-      const audioBuffers = await Promise.all(
-        variationPrompts.map((variationPrompt, index) => 
-          this.generateSingleVariation(variationPrompt, {
-            provider,
-            duration,
-            apiKey,
-            variationIndex: index
-          })
-        )
+      // ✅ Call backend for ElevenLabs generation
+      // We use the co-producer generate endpoint which now supports ElevenLabs
+      const response = await fetch('/api/co-producer/generate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          prompt,
+          context: { variations, duration, provider },
+          options: { promptInfluence: options.promptInfluence }
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`API error: ${response.status}`);
+      }
+
+      const backendResult = await response.json();
+
+      if (backendResult.mock) {
+        const errorMsg = backendResult.serviceError || 'Backend fell back to mock data';
+        console.warn(`⚠️ AI Service Fallback: ${errorMsg}`);
+
+        // If we are NOT in mock mode, this is a real error we should show the user
+        if (!this.mockMode) {
+          throw new Error(`AI Generation Failed: ${errorMsg}`);
+        }
+
+        return this.generateMockInstrument(prompt, variations, duration);
+      }
+
+      // ✅ Decode base64 variations into AudioBuffers
+      const processedVariations = await Promise.all(
+        backendResult.variations.map(async (v) => {
+          if (v.audioData) {
+            try {
+              // Robust base64 to ArrayBuffer conversion using fetch
+              const dataUrl = `data:audio/mpeg;base64,${v.audioData}`;
+              const response = await fetch(dataUrl);
+              const arrayBuffer = await response.arrayBuffer();
+
+              // Decode using central audioUtils (ensures global AudioContext usage)
+              const audioBuffer = await decodeAudioData(arrayBuffer);
+
+              return {
+                ...v,
+                audioBuffer
+              };
+            } catch (err) {
+              console.error('❌ Failed to decode variation audio:', err);
+              return v;
+            }
+          }
+          return v;
+        })
       );
 
-      // Create result object
       const result = {
         originalPrompt: prompt,
-        variations: audioBuffers.map((buffer, i) => ({
-          id: `var-${i + 1}`,
-          audioBuffer: buffer,
-          prompt: variationPrompts[i],
-          duration: buffer.duration
-        })),
-        provider,
+        variations: processedVariations,
+        provider: backendResult.provider || provider,
         cached: false,
         timestamp: Date.now()
       };
 
       // Cache result
       this.cache.set(cacheKey, result);
-      
+
       return result;
     } catch (error) {
       console.error('❌ AI Instrument generation failed:', error);
@@ -80,7 +118,7 @@ export class AIInstrumentService {
    */
   async generateMockInstrument(prompt, variations, duration) {
     console.log('🎭 Generating mock instrument (API key not available yet)');
-    
+
     // Simulate API delay
     await new Promise(resolve => setTimeout(resolve, 1500));
 
@@ -95,7 +133,7 @@ export class AIInstrumentService {
     const mockVariations = variationPrompts.map((variationPrompt, i) => {
       // Create silent audio buffer (will be replaced with real audio when API is available)
       const buffer = audioContext.createBuffer(2, length, sampleRate);
-      
+
       // Add some noise for visualization
       for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
         const channelData = buffer.getChannelData(channel);
@@ -127,11 +165,11 @@ export class AIInstrumentService {
    */
   async generateSingleVariation(prompt, options) {
     const { provider, duration, apiKey, variationIndex } = options;
-    
+
     // TODO: Implement real API call when API key is available
     // For now, return mock data
     if (this.mockMode) {
-      return this.generateMockInstrument(prompt, 1, duration).then(result => 
+      return this.generateMockInstrument(prompt, 1, duration).then(result =>
         result.variations[0].audioBuffer
       );
     }
@@ -170,7 +208,7 @@ export class AIInstrumentService {
     ];
 
     const variations = [basePrompt]; // Original as first variation
-    
+
     for (let i = 1; i < count; i++) {
       const modifier = modifiers[(i - 1) % modifiers.length];
       variations.push(`${basePrompt}, ${modifier}`);

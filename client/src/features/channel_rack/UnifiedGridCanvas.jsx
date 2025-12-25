@@ -30,11 +30,19 @@
 import React, { useRef, useEffect, useCallback, useState, useMemo } from 'react';
 import { globalStyleCache } from '@/lib/rendering/StyleCache';
 import { canvasWorkerBridge, supportsOffscreenCanvas } from '@/lib/rendering/worker/CanvasWorkerBridge';
+import { renderManager } from '@/services/CanvasRenderManager';
 
 const STEP_WIDTH = 16;
 const ROW_HEIGHT = 64;
 const BUFFER_STEPS = 32;
 const BUFFER_ROWS = 2;
+
+const readDevicePixelRatio = () => {
+  if (typeof window === 'undefined' || !window.devicePixelRatio) {
+    return 1;
+  }
+  return window.devicePixelRatio || 1;
+};
 
 // ✅ UTILITY: Convert pitch to MIDI number
 const pitchToMidi = (pitch) => {
@@ -92,8 +100,13 @@ const UnifiedGridCanvas = React.memo(({
   const [themeVersion, setThemeVersion] = useState(0); // Force re-render on theme change
   const renderRef = useRef(null); // Store render function for immediate theme change
   const isDirtyRef = useRef(true); // ⚡ DIRTY FLAG: Track if canvas needs redraw
+  const renderIdRef = useRef(null); // ✅ NEW: CanvasRenderManager ID
   const markDirty = useCallback(() => {
     isDirtyRef.current = true;
+    // ✅ NEW: Mark dirty in CanvasRenderManager
+    if (renderIdRef.current) {
+      renderManager.markDirty(renderIdRef.current);
+    }
   }, []);
 
   // ✅ Worker/serialization refs
@@ -109,8 +122,43 @@ const UnifiedGridCanvas = React.memo(({
   const lastTotalStepsRef = useRef(null);
   const lastViewportRef = useRef({ width: null, height: null });
   const lastScrollPostedRef = useRef({ x: -1, y: -1 });
+  const lastDevicePixelRatioSentRef = useRef(readDevicePixelRatio());
+
+  const [devicePixelRatio, setDevicePixelRatio] = useState(lastDevicePixelRatioSentRef.current);
+  const devicePixelRatioRef = useRef(lastDevicePixelRatioSentRef.current);
 
   const palette = useMemo(() => getPalette(), [themeVersion]);
+  const instrumentsFingerprint = useMemo(() => buildInstrumentSignature(instruments), [instruments]);
+  const notesDataFingerprint = useMemo(() => {
+    if (!notesData) return 'none';
+    const keys = Object.keys(notesData).sort();
+    const counts = keys.map((key) => (Array.isArray(notesData[key]) ? notesData[key].length : 0));
+    return `${keys.join('|')}#${counts.join(',')}`;
+  }, [notesData]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    const handleDprChange = () => {
+      const next = readDevicePixelRatio();
+      if (next !== devicePixelRatioRef.current) {
+        devicePixelRatioRef.current = next;
+        setDevicePixelRatio(next);
+        markDirty();
+      }
+    };
+
+    window.addEventListener('resize', handleDprChange);
+    window.addEventListener('orientationchange', handleDprChange);
+
+    return () => {
+      window.removeEventListener('resize', handleDprChange);
+      window.removeEventListener('orientationchange', handleDprChange);
+    };
+  }, [markDirty]);
+
+  // (placeholder removed)
 
   // ✅ FIX: Create canvas element manually to prevent duplicate transfers
   useEffect(() => {
@@ -159,16 +207,24 @@ const UnifiedGridCanvas = React.memo(({
     };
   }, []);
 
+  // ✅ FIX: On mount, invalidate StyleCache to ensure fresh theme values
+  // This handles the case when project is opened with a different theme
+  useEffect(() => {
+    globalStyleCache.invalidate();
+    console.log('🎨 UnifiedGridCanvas: Invalidated StyleCache on mount');
+  }, []);
+
   // ✅ Listen for theme changes and fullscreen - AGGRESSIVE: Call render immediately
   useEffect(() => {
     const handleThemeChange = () => {
-      console.log('🎨 Theme changed - marking grid canvas dirty');
-
-      // Method 1: Increment version to trigger useCallback recreation
-      setThemeVersion(v => v + 1);
-
-      // Method 2: Mark dirty for next UIUpdateManager cycle
-      markDirty();
+      console.log('🎨 Theme changed - scheduling palette refresh');
+      // ✅ FIX: Invalidate StyleCache first to ensure fresh values
+      globalStyleCache.invalidate();
+      // Wait one frame so CSS vars settle before re-reading palette
+      requestAnimationFrame(() => {
+        setThemeVersion((v) => v + 1);
+        markDirty();
+      });
     };
 
     const handleFullscreenChange = () => {
@@ -237,11 +293,13 @@ const UnifiedGridCanvas = React.memo(({
       viewportHeight,
       scrollX: scrollXRef?.current || 0,
       scrollY: scrollYRef?.current || 0,
-      palette
+      palette,
+      devicePixelRatio
     });
 
     workerInitializedRef.current = true;
     workerNeedsFullSyncRef.current = false;
+    lastDevicePixelRatioSentRef.current = devicePixelRatio;
   }, [
     instruments,
     notesData,
@@ -252,7 +310,36 @@ const UnifiedGridCanvas = React.memo(({
     palette,
     scrollXRef,
     scrollYRef,
-    supportsOffscreenCanvas
+    supportsOffscreenCanvas,
+    devicePixelRatio
+  ]);
+
+  useEffect(() => {
+    if (!supportsOffscreenCanvas) return;
+    if (!workerSurfaceIdRef.current) return;
+    if (!isVisible) return;
+    workerNeedsFullSyncRef.current = true;
+    sendFullStateToWorker();
+  }, [
+    supportsOffscreenCanvas,
+    isVisible,
+    sendFullStateToWorker,
+    themeVersion
+  ]);
+
+  useEffect(() => {
+    if (!supportsOffscreenCanvas) return;
+    if (!workerSurfaceIdRef.current) return;
+    if (!isVisible) return;
+    workerNeedsFullSyncRef.current = true;
+    sendFullStateToWorker();
+  }, [
+    supportsOffscreenCanvas,
+    isVisible,
+    sendFullStateToWorker,
+    instrumentsFingerprint,
+    notesDataFingerprint,
+    themeVersion
   ]);
 
   // Worker surface lifecycle (initialization)
@@ -278,7 +365,8 @@ const UnifiedGridCanvas = React.memo(({
       viewportHeight: 0,
       scrollX: 0,
       scrollY: 0,
-      palette
+      palette,
+      devicePixelRatio
     });
 
     if (surfaceId) {
@@ -291,7 +379,7 @@ const UnifiedGridCanvas = React.memo(({
         sendFullStateToWorker();
       }
     }
-  }, [supportsOffscreenCanvas, isVisible, palette, sendFullStateToWorker]);
+  }, [supportsOffscreenCanvas, isVisible, palette, sendFullStateToWorker, devicePixelRatio]);
 
   // Trigger full sync when panel becomes visible again
   useEffect(() => {
@@ -356,6 +444,11 @@ const UnifiedGridCanvas = React.memo(({
       updates.viewportHeight = viewportHeight;
     }
 
+    if (devicePixelRatio !== lastDevicePixelRatioSentRef.current) {
+      lastDevicePixelRatioSentRef.current = devicePixelRatio;
+      updates.devicePixelRatio = devicePixelRatio;
+    }
+
     const instrumentIds = instruments.map((inst) => inst?.id).filter(Boolean);
     const { patches, removals } = computeNotesDiff(notesData, notesCacheRef, instrumentIds);
     if (patches && Object.keys(patches).length > 0) {
@@ -377,7 +470,8 @@ const UnifiedGridCanvas = React.memo(({
     patternLength,
     viewportWidth,
     viewportHeight,
-    palette
+    palette,
+    devicePixelRatio
   ]);
 
   useEffect(() => {

@@ -6,6 +6,7 @@ import {
   SAMPLER_PRESETS,
   MULTI_SAMPLER_PRESETS,
   VA_SYNTH_PRESETS,
+  ZENITH_SYNTH_PRESETS,
   createInstrumentFromPreset
 } from '@/config/instrumentCategories';
 import { usePanelsStore } from '@/store/usePanelsStore';
@@ -58,6 +59,8 @@ export default function InstrumentPicker({ onSelectInstrument, onClose }) {
         return MULTI_SAMPLER_PRESETS;
       case INSTRUMENT_CATEGORIES.VA_SYNTH:
         return VA_SYNTH_PRESETS;
+      case INSTRUMENT_CATEGORIES.ZENITH_SYNTH:
+        return ZENITH_SYNTH_PRESETS;
       case INSTRUMENT_CATEGORIES.AI_INSTRUMENT:
         // AI instruments don't have presets - return empty
         return {};

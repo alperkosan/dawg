@@ -47,6 +47,9 @@ export const usePlaybackStore = create((set, get) => ({
   // ✅ PHASE 1: Follow Playhead Mode
   followPlayheadMode: 'OFF', // 'CONTINUOUS' | 'PAGE' | 'OFF'
 
+  // ✅ GLOBAL SHORTCUTS: Musical Typing mode
+  keyboardPianoMode: false,
+
   // =============== INITIALIZATION ===============
   _initController: async () => {
     const state = get();
@@ -76,19 +79,30 @@ export const usePlaybackStore = create((set, get) => ({
       });
 
       let lastPositionUpdate = 0;
-      const POSITION_UPDATE_INTERVAL = 33.33;
+      const POSITION_UPDATE_INTERVAL = 100; // ✅ 10 FPS - sufficient for visual feedback (was 30 FPS)
+
+      // ✅ Use RAF for frame-synced updates
+      let rafId = null;
+      let pendingPosition = null;
 
       controller.on('position-update', (data) => {
-        const now = performance.now();
-        if (now - lastPositionUpdate < POSITION_UPDATE_INTERVAL) return;
+        pendingPosition = data;
 
-        // ✅ Always update currentStep - components decide whether to use it based on mode
-        // Store now includes mode information for filtering at component level
-        set({
-          currentStep: data.position,
-          _currentPositionMode: data.mode // Track which mode this position is for
-        });
-        lastPositionUpdate = now;
+        // Batch multiple position events into single RAF update
+        if (!rafId) {
+          rafId = requestAnimationFrame((timestamp) => {
+            if (pendingPosition && timestamp - lastPositionUpdate >= POSITION_UPDATE_INTERVAL) {
+              // ✅ Always update currentStep - components decide whether to use it based on mode
+              // Store now includes mode information for filtering at component level
+              set({
+                currentStep: pendingPosition.position,
+                _currentPositionMode: pendingPosition.mode // Track which mode this position is for
+              });
+              lastPositionUpdate = timestamp;
+            }
+            rafId = null;
+          });
+        }
       });
 
       controller.on('ghost-position-change', (position) => {
@@ -287,6 +301,11 @@ export const usePlaybackStore = create((set, get) => ({
     const nextIndex = (currentIndex + 1) % modes.length;
     const nextMode = modes[nextIndex];
     get().setFollowPlayheadMode(nextMode);
+  },
+
+  setKeyboardPianoMode: (active) => {
+    set({ keyboardPianoMode: active });
+    console.log('🎹 Global Musical Typing:', active ? 'ON' : 'OFF');
   },
 
   // =============== UTILITY ===============

@@ -8,8 +8,7 @@
   background: var(--zenith-bg-secondary);
   border: 1px solid var(--zenith-border-subtle);
   border-radius: 6px;
-  padding: 8px 6px;
-  padding-bottom: 160px; /* Extra space for jack send row when active */
+  padding: 8px 6px 24px;
   gap: 8px;
   cursor: pointer;
   transition: all 0.2s ease;
@@ -162,6 +161,7 @@
   justify-content: center;
   align-items: stretch;
   min-height: 100px;
+  margin-bottom: 8px;
 }
 
 /* =================== FADER =================== */
@@ -170,6 +170,8 @@
   display: flex;
   justify-content: center;
   align-items: center;
+  flex: none;
+  padding-top: 4px;
 }
 
 .mixer-channel-2__volume-label {

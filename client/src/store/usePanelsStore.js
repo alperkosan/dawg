@@ -25,7 +25,7 @@ export const usePanelsStore = create((set, get) => ({
   panelStack: [PANEL_IDS.CHANNEL_RACK, PANEL_IDS.MIXER_2], // Hangi panelin en üstte olduğunu takip eder
   fullscreenPanel: null,
   minimizedPanels: [],
-  
+
   // Editörler için özel state'ler
   editingInstrumentId: null, // Hangi enstrümanın düzenlendiği
   editingClipId: null, // Hangi audio clip'in düzenlendiği (arrangement'tan)
@@ -33,22 +33,39 @@ export const usePanelsStore = create((set, get) => ({
   editorClipData: null, // Sample Editor için clip metadata (name, color, etc.)
   pianoRollInstrumentId: null,
 
+  // ✅ NEW: Global modal states (rendered at App level to avoid overflow issues)
+  isAudioExportPanelOpen: false,
+  isInstrumentPickerOpen: false,
+  isPresetLibraryOpen: false,
+  isCoProducerOpen: false,
+
   // --- EYLEMLER (ACTIONS) ---
 
   setEditorBuffer: (buffer) => set({ editorBuffer: buffer }),
   setEditorClipData: (clipData) => set({ editorClipData: clipData }),
-  
+
+  // ✅ NEW: Modal state management
+  setAudioExportPanelOpen: (isOpen) => set({ isAudioExportPanelOpen: isOpen }),
+  setInstrumentPickerOpen: (isOpen) => set({ isInstrumentPickerOpen: isOpen }),
+  setPresetLibraryOpen: (isOpen) => {
+    console.log('🔧 usePanelsStore - setPresetLibraryOpen called with:', isOpen);
+    set({ isPresetLibraryOpen: isOpen });
+    console.log('🔧 usePanelsStore - state after set:', get().isPresetLibraryOpen);
+  },
+  setCoProducerOpen: (isOpen) => set({ isCoProducerOpen: isOpen }),
+  toggleCoProducer: () => set(state => ({ isCoProducerOpen: !state.isCoProducerOpen })),
+
   // Minimize edilmiş panellerin listesini güncelleyen özel fonksiyon.
   _updateMinimizedPanels: () => {
-      const minimized = Object.values(get().panels).filter(p => p.isMinimized);
-      set({ minimizedPanels: minimized });
+    const minimized = Object.values(get().panels).filter(p => p.isMinimized);
+    set({ minimizedPanels: minimized });
   },
 
   bringPanelToFront: (panelId) => {
     set(state => {
       // Zaten en üstteyse bir şey yapma.
       if (state.panelStack.length > 0 && state.panelStack[state.panelStack.length - 1] === panelId) {
-        return {}; 
+        return {};
       }
       // Paneli yığının en üstüne taşı.
       return { panelStack: [...state.panelStack.filter(p => p !== panelId), panelId] };
@@ -75,7 +92,7 @@ export const usePanelsStore = create((set, get) => ({
     }
     get()._updateMinimizedPanels();
   },
-  
+
   // Bir paneli tam ekran yapar veya eski haline getirir.
   handleMaximize: (panelId) => {
     set(state => ({ fullscreenPanel: state.fullscreenPanel === panelId ? null : panelId }));
@@ -84,15 +101,15 @@ export const usePanelsStore = create((set, get) => ({
 
   // Bir paneli görev çubuğuna küçültür.
   handleMinimize: (panelId, title) => {
-      set(state => ({ panels: { ...state.panels, [panelId]: { ...state.panels[panelId], isOpen: false, isMinimized: true, title } } }));
-      get()._updateMinimizedPanels();
+    set(state => ({ panels: { ...state.panels, [panelId]: { ...state.panels[panelId], isOpen: false, isMinimized: true, title } } }));
+    get()._updateMinimizedPanels();
   },
 
   // Görev çubuğundan bir paneli geri yükler.
   handleRestore: (panelId) => {
-      set(state => ({ panels: { ...state.panels, [panelId]: { ...state.panels[panelId], isOpen: true, isMinimized: false } } }));
-      get().bringPanelToFront(panelId);
-      get()._updateMinimizedPanels();
+    set(state => ({ panels: { ...state.panels, [panelId]: { ...state.panels[panelId], isOpen: true, isMinimized: false } } }));
+    get().bringPanelToFront(panelId);
+    get()._updateMinimizedPanels();
   },
 
   // Bir panelin pozisyonunu veya boyutunu günceller (DraggableWindow'dan gelir).
@@ -144,15 +161,15 @@ export const usePanelsStore = create((set, get) => ({
       return;
     }
     */
-    
+
     // Eğer bir sample ise, ses motorundan buffer'ını iste.
     if (instrument.type === INSTRUMENT_TYPES.SAMPLE) {
-        const buffer = await AudioContextService.requestInstrumentBuffer(instrument.id);
-        if (!buffer) {
-            console.error(`"${instrument.name}" için ses verisi bulunamadı.`);
-            return;
-        }
-        set({ editorBuffer: buffer });
+      const buffer = await AudioContextService.requestInstrumentBuffer(instrument.id);
+      if (!buffer) {
+        console.error(`"${instrument.name}" için ses verisi bulunamadı.`);
+        return;
+      }
+      set({ editorBuffer: buffer });
     }
 
     const newPosition = getNextCascadePosition(get().panels);

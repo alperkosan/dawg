@@ -21,13 +21,13 @@
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import PluginContainerV2 from '../container/PluginContainerV2';
-import { TwoPanelLayout } from '../layout/TwoPanelLayout';
-import { Knob } from '@/components/controls';
+import { Knob, ModeSelector, Checkbox } from '@/components/controls';
 import { getCategoryColors } from '../PluginDesignSystem';
 import { useParameterBatcher } from '@/services/ParameterBatcher';
 import { useRenderer } from '@/services/CanvasRenderManager';
 import { useAudioPlugin, useGhostValue } from '@/hooks/useAudioPlugin';
 import { useMixerStore } from '@/store/useMixerStore';
+import { usePlaybackStore } from '@/store/usePlaybackStore';
 
 // ============================================================================
 // FILTER SWEEP VISUALIZER
@@ -225,7 +225,7 @@ const FilterSweepVisualizer = ({ cutoff, resonance, filterType, drive, trackId, 
   useRenderer(drawVisualization, 5, 16, [cutoff, resonance, filterType, drive, inputLevel]);
 
   return (
-    <div ref={containerRef} className="w-full h-[220px] bg-black/50 rounded-xl border border-[#06b6d4]/20 overflow-hidden">
+    <div ref={containerRef} className="w-full h-[180px] bg-black/50 rounded-xl border border-[#06b6d4]/20 overflow-hidden">
       <canvas ref={canvasRef} className="w-full h-full" />
     </div>
   );
@@ -242,8 +242,20 @@ const TidalFilterUI_V2 = ({ trackId, effect, effectNode, definition }) => {
     resonance = 0.5,
     filterType = 0,
     drive = 1.0,
-    wet = 1.0
+    wet = 1.0,
+    // ✅ NEW: Filter model and LFO
+    filterModel = 0,
+    lfoEnabled = 0,
+    lfoRate = 1.0,
+    lfoDepth = 0.5,
+    lfoShape = 0,
+    lfoTempoSync = 0,
+    lfoNoteDivision = 3,
+    bpm = 120
   } = effect.settings || {};
+
+  // Get current BPM from playback store
+  const { bpm: currentBpm } = usePlaybackStore();
 
   // Local state for UI
   const [localCutoff, setLocalCutoff] = useState(cutoff);
@@ -251,6 +263,14 @@ const TidalFilterUI_V2 = ({ trackId, effect, effectNode, definition }) => {
   const [localFilterType, setLocalFilterType] = useState(filterType);
   const [localDrive, setLocalDrive] = useState(drive);
   const [localWet, setLocalWet] = useState(wet);
+  // ✅ NEW: Filter model and LFO state
+  const [localFilterModel, setLocalFilterModel] = useState(filterModel);
+  const [localLfoEnabled, setLocalLfoEnabled] = useState(lfoEnabled);
+  const [localLfoRate, setLocalLfoRate] = useState(lfoRate);
+  const [localLfoDepth, setLocalLfoDepth] = useState(lfoDepth);
+  const [localLfoShape, setLocalLfoShape] = useState(lfoShape);
+  const [localLfoTempoSync, setLocalLfoTempoSync] = useState(lfoTempoSync);
+  const [localLfoNoteDivision, setLocalLfoNoteDivision] = useState(lfoNoteDivision);
 
   // Get category colors
   const categoryColors = useMemo(() => getCategoryColors('spectral-weave'), []);
@@ -265,6 +285,13 @@ const TidalFilterUI_V2 = ({ trackId, effect, effectNode, definition }) => {
   const ghostFilterType = useGhostValue(localFilterType * 100, 400);
   const ghostDrive = useGhostValue(localDrive, 400);
   const ghostWet = useGhostValue(localWet * 100, 400);
+
+  // ✅ NEW: Update BPM when tempo changes
+  useEffect(() => {
+    if (currentBpm && effectNode) {
+      setParam('bpm', currentBpm);
+    }
+  }, [currentBpm, effectNode, setParam]);
 
   // Sync with effect.settings when presets are loaded
   useEffect(() => {
@@ -292,13 +319,45 @@ const TidalFilterUI_V2 = ({ trackId, effect, effectNode, definition }) => {
       setLocalWet(effect.settings.wet);
       updates.wet = effect.settings.wet;
     }
+    // ✅ NEW: Filter model and LFO
+    if (effect.settings.filterModel !== undefined) {
+      setLocalFilterModel(effect.settings.filterModel);
+      updates.filterModel = effect.settings.filterModel;
+    }
+    if (effect.settings.lfoEnabled !== undefined) {
+      setLocalLfoEnabled(effect.settings.lfoEnabled);
+      updates.lfoEnabled = effect.settings.lfoEnabled;
+    }
+    if (effect.settings.lfoRate !== undefined) {
+      setLocalLfoRate(effect.settings.lfoRate);
+      updates.lfoRate = effect.settings.lfoRate;
+    }
+    if (effect.settings.lfoDepth !== undefined) {
+      setLocalLfoDepth(effect.settings.lfoDepth);
+      updates.lfoDepth = effect.settings.lfoDepth;
+    }
+    if (effect.settings.lfoShape !== undefined) {
+      setLocalLfoShape(effect.settings.lfoShape);
+      updates.lfoShape = effect.settings.lfoShape;
+    }
+    if (effect.settings.lfoTempoSync !== undefined) {
+      setLocalLfoTempoSync(effect.settings.lfoTempoSync);
+      updates.lfoTempoSync = effect.settings.lfoTempoSync;
+    }
+    if (effect.settings.lfoNoteDivision !== undefined) {
+      setLocalLfoNoteDivision(effect.settings.lfoNoteDivision);
+      updates.lfoNoteDivision = effect.settings.lfoNoteDivision;
+    }
+    if (currentBpm) {
+      updates.bpm = currentBpm;
+    }
 
     // Send all parameter updates to worklet immediately
     // Note: Don't call handleMixerEffectChange here - it's already called by PresetManager
     if (Object.keys(updates).length > 0) {
       setParams(updates, { immediate: true });
     }
-  }, [effect.settings, effectNode, setParams]);
+  }, [effect.settings, effectNode, setParams, currentBpm]);
 
   // Handle parameter changes
   const handleParamChange = useCallback((key, value) => {
@@ -311,6 +370,14 @@ const TidalFilterUI_V2 = ({ trackId, effect, effectNode, definition }) => {
     else if (key === 'filterType') setLocalFilterType(value);
     else if (key === 'drive') setLocalDrive(value);
     else if (key === 'wet') setLocalWet(value);
+    // ✅ NEW: Filter model and LFO
+    else if (key === 'filterModel') setLocalFilterModel(value);
+    else if (key === 'lfoEnabled') setLocalLfoEnabled(value);
+    else if (key === 'lfoRate') setLocalLfoRate(value);
+    else if (key === 'lfoDepth') setLocalLfoDepth(value);
+    else if (key === 'lfoShape') setLocalLfoShape(value);
+    else if (key === 'lfoTempoSync') setLocalLfoTempoSync(value);
+    else if (key === 'lfoNoteDivision') setLocalLfoNoteDivision(value);
   }, [setParam, handleMixerEffectChange, trackId, effect.id]);
 
   // Filter type name helper
@@ -328,24 +395,49 @@ const TidalFilterUI_V2 = ({ trackId, effect, effectNode, definition }) => {
       definition={definition}
       category="spectral-weave"
     >
-      <TwoPanelLayout
-        category="spectral-weave"
-
-        mainPanel={
-          <>
+      <div
+        className="w-full h-full flex flex-col gap-3 overflow-y-auto p-4"
+        style={{
+          background: `linear-gradient(135deg,
+            ${categoryColors.accent}12 0%,
+            #0a0a0a 50%,
+            ${categoryColors.primary}06 100%)`
+        }}
+      >
             {/* Filter Sweep Visualizer */}
-            <FilterSweepVisualizer
-              trackId={trackId}
-              effectId={effect.id}
-              cutoff={localCutoff}
-              resonance={localResonance}
-              filterType={localFilterType}
-              drive={localDrive}
-            />
+            <div className="flex-shrink-0">
+              <FilterSweepVisualizer
+                trackId={trackId}
+                effectId={effect.id}
+                cutoff={localCutoff}
+                resonance={localResonance}
+                filterType={localFilterType}
+                drive={localDrive}
+              />
+            </div>
+
+            {/* ✅ NEW: Filter Model Selector */}
+            <div className="flex-shrink-0 bg-gradient-to-br from-black/50 to-[#001829]/30 rounded-xl p-3 border border-[#06b6d4]/20">
+              <div className="text-[9px] text-[#14b8a6]/70 font-bold uppercase tracking-wider mb-2">
+                FILTER MODEL
+              </div>
+              <ModeSelector
+                modes={[
+                  { id: 0, name: 'State-Var', description: 'Clean state-variable filter' },
+                  { id: 1, name: 'Moog', description: 'Warm Moog ladder filter' },
+                  { id: 2, name: 'Korg', description: 'Aggressive Korg MS-20 filter' },
+                  { id: 3, name: 'Oberheim', description: 'Smooth Oberheim SEM filter' }
+                ]}
+                activeMode={localFilterModel}
+                onChange={(mode) => handleParamChange('filterModel', mode)}
+                category="spectral-weave"
+                compact={true}
+              />
+            </div>
 
             {/* Main Controls */}
-            <div className="bg-gradient-to-br from-black/50 to-[#001829]/30 rounded-xl p-6 border border-[#06b6d4]/20">
-              <div className="grid grid-cols-3 gap-6">
+            <div className="flex-shrink-0 bg-gradient-to-br from-black/50 to-[#001829]/30 rounded-xl p-4 border border-[#06b6d4]/20">
+              <div className="grid grid-cols-3 gap-4">
                 <Knob
                   label="CUTOFF"
                   value={localCutoff}
@@ -389,8 +481,8 @@ const TidalFilterUI_V2 = ({ trackId, effect, effectNode, definition }) => {
             </div>
 
             {/* Secondary Controls */}
-            <div className="bg-gradient-to-br from-black/50 to-[#001829]/30 rounded-xl p-6 border border-[#06b6d4]/20">
-              <div className="grid grid-cols-2 gap-6">
+            <div className="flex-shrink-0 bg-gradient-to-br from-black/50 to-[#001829]/30 rounded-xl p-4 border border-[#06b6d4]/20">
+              <div className="grid grid-cols-2 gap-4">
                 <Knob
                   label="DRIVE"
                   value={localDrive}
@@ -418,86 +510,105 @@ const TidalFilterUI_V2 = ({ trackId, effect, effectNode, definition }) => {
                 />
               </div>
             </div>
-          </>
-        }
 
-        sidePanel={
-          <>
-            {/* Processing Stats */}
-            <div className="bg-gradient-to-br from-[#001829]/50 to-black/50 rounded-xl p-4 border border-[#06b6d4]/10">
-              <div className="text-[9px] text-[#14b8a6]/70 font-bold uppercase tracking-wider mb-3">
-                Processing
+            {/* ✅ NEW: LFO Modulation */}
+            <div className="flex-shrink-0 bg-gradient-to-br from-black/50 to-[#001829]/30 rounded-xl p-4 border border-[#06b6d4]/20">
+              <div className="text-[9px] text-[#14b8a6]/70 font-bold uppercase tracking-wider mb-3 flex items-center justify-between">
+                <span>LFO MODULATION</span>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={localLfoEnabled > 0.5}
+                    onChange={(e) => handleParamChange('lfoEnabled', e.target.checked ? 1 : 0)}
+                    className="w-4 h-4 rounded border-[#06b6d4]/30 bg-black/50 checked:bg-[#06b6d4] checked:border-[#06b6d4] focus:ring-2 focus:ring-[#06b6d4]/50"
+                  />
+                  <span className="text-[10px] text-white/70">ENABLED</span>
+                </label>
               </div>
-              <div className="space-y-2.5">
-                <div className="flex justify-between items-center text-[10px]">
-                  <span className="text-white/50">Cutoff</span>
-                  <span className="text-[#14b8a6] font-mono font-bold tabular-nums">
-                    {localCutoff < 1000 ? `${localCutoff.toFixed(0)}Hz` : `${(localCutoff / 1000).toFixed(1)}kHz`}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center text-[10px]">
-                  <span className="text-white/50">Resonance</span>
-                  <span className="text-[#06b6d4] font-mono font-bold tabular-nums">
-                    {(localResonance * 100).toFixed(0)}%
-                  </span>
-                </div>
-                <div className="flex justify-between items-center text-[10px]">
-                  <span className="text-white/50">Type</span>
-                  <span className="text-[#14b8a6] font-mono font-bold tabular-nums">
-                    {getFilterTypeName(localFilterType)}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center text-[10px]">
-                  <span className="text-white/50">Drive</span>
-                  <span className="text-[#06b6d4] font-mono font-bold tabular-nums">
-                    {localDrive.toFixed(1)}x
-                  </span>
-                </div>
-                <div className="flex justify-between items-center text-[10px]">
-                  <span className="text-white/50">Mix</span>
-                  <span className="text-[#14b8a6] font-mono font-bold tabular-nums">
-                    {(localWet * 100).toFixed(0)}%
-                  </span>
-                </div>
-              </div>
-            </div>
+              
+              {localLfoEnabled > 0.5 && (
+                <>
+                  <div className="grid grid-cols-2 gap-3 mb-3">
+                    <Knob
+                      label="RATE"
+                      value={localLfoTempoSync > 0.5 ? 0 : localLfoRate}
+                      onChange={(val) => handleParamChange('lfoRate', val)}
+                      min={0.1}
+                      max={20}
+                      defaultValue={1.0}
+                      sizeVariant="medium"
+                      category="spectral-weave"
+                      valueFormatter={(v) => `${v.toFixed(2)}Hz`}
+                      disabled={localLfoTempoSync > 0.5}
+                    />
 
-            {/* Filter Explanation */}
-            <div className="bg-gradient-to-br from-[#001829]/50 to-black/50 rounded-xl p-4 border border-[#06b6d4]/10">
-              <div className="text-[9px] text-[#14b8a6]/70 font-bold uppercase tracking-wider mb-3">
-                About Filters
-              </div>
-              <div className="space-y-2 text-[9px] text-white/50 leading-relaxed">
-                <p>
-                  <span className="text-[#14b8a6] font-bold">Cutoff:</span> Transition frequency point
-                </p>
-                <p>
-                  <span className="text-[#06b6d4] font-bold">Resonance:</span> Emphasis at cutoff
-                </p>
-                <p>
-                  <span className="text-[#14b8a6] font-bold">Type:</span> LP/BP/HP/Notch morphing
-                </p>
-                <p>
-                  <span className="text-[#06b6d4] font-bold">Drive:</span> Input gain saturation
-                </p>
-                <p className="text-white/30 italic pt-2 text-[8px]">
-                  💡 State-variable filter with smooth morphing
-                </p>
-              </div>
-            </div>
+                    <Knob
+                      label="DEPTH"
+                      value={localLfoDepth * 100}
+                      onChange={(val) => handleParamChange('lfoDepth', val / 100)}
+                      min={0}
+                      max={100}
+                      defaultValue={50}
+                      sizeVariant="medium"
+                      category="spectral-weave"
+                      valueFormatter={(v) => `${v.toFixed(0)}%`}
+                    />
+                  </div>
 
-            {/* About */}
-            <div className="bg-gradient-to-br from-[#001829]/50 to-black/50 rounded-xl p-4 border border-[#06b6d4]/10">
-              <div className="text-[9px] text-[#14b8a6]/70 font-bold uppercase tracking-wider mb-2">
-                About
-              </div>
-              <div className="text-[10px] text-white/60 leading-relaxed">
-                {definition.story}
-              </div>
+                  <div className="mb-3">
+                    <div className="text-[9px] text-[#14b8a6]/70 font-bold uppercase tracking-wider mb-2">
+                      SHAPE
+                    </div>
+                    <ModeSelector
+                      modes={[
+                        { id: 0, name: 'Sine', description: 'Smooth sine wave' },
+                        { id: 1, name: 'Triangle', description: 'Linear triangle wave' },
+                        { id: 2, name: 'Square', description: 'Hard square wave' },
+                        { id: 3, name: 'Saw', description: 'Rising sawtooth wave' }
+                      ]}
+                      activeMode={localLfoShape}
+                      onChange={(mode) => handleParamChange('lfoShape', mode)}
+                      category="spectral-weave"
+                      compact={true}
+                    />
+                  </div>
+
+                  <div className="mb-0">
+                    <label className="flex items-center gap-2 cursor-pointer mb-2">
+                      <input
+                        type="checkbox"
+                        checked={localLfoTempoSync > 0.5}
+                        onChange={(e) => handleParamChange('lfoTempoSync', e.target.checked ? 1 : 0)}
+                        className="w-4 h-4 rounded border-[#06b6d4]/30 bg-black/50 checked:bg-[#06b6d4] checked:border-[#06b6d4] focus:ring-2 focus:ring-[#06b6d4]/50"
+                      />
+                      <span className="text-[10px] text-white/70 font-bold uppercase">TEMPO SYNC</span>
+                    </label>
+
+                    {localLfoTempoSync > 0.5 && (
+                      <ModeSelector
+                        modes={[
+                          { id: 0, name: '1/32', description: '1/32 note' },
+                          { id: 1, name: '1/16', description: '1/16 note' },
+                          { id: 2, name: '1/8', description: '1/8 note' },
+                          { id: 3, name: '1/4', description: '1/4 note' },
+                          { id: 4, name: '1/2', description: '1/2 note' },
+                          { id: 5, name: '1/1', description: 'Whole note' },
+                          { id: 6, name: '1/8.', description: 'Dotted 1/8 note' },
+                          { id: 7, name: '1/4.', description: 'Dotted 1/4 note' },
+                          { id: 8, name: '1/8t', description: '1/8 triplet' },
+                          { id: 9, name: '1/4t', description: '1/4 triplet' }
+                        ]}
+                        activeMode={localLfoNoteDivision}
+                        onChange={(mode) => handleParamChange('lfoNoteDivision', mode)}
+                        category="spectral-weave"
+                        compact={true}
+                      />
+                    )}
+                  </div>
+                </>
+              )}
             </div>
-          </>
-        }
-      />
+      </div>
     </PluginContainerV2>
   );
 };

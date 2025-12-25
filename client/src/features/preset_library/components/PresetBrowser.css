@@ -1,0 +1,35 @@
+/**
+ * Preset Browser Styles
+ */
+
+.preset-browser {
+    width: 100%;
+}
+
+.preset-browser-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 16px;
+}
+
+.preset-browser-loading,
+.preset-browser-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 300px;
+    color: #666;
+    gap: 12px;
+}
+
+.preset-browser-empty-hint {
+    font-size: 13px;
+    color: #555;
+}
+
+.preset-browser-loading-more {
+    display: flex;
+    justify-content: center;
+    padding: 20px;
+}

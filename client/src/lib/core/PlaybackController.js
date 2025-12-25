@@ -199,7 +199,13 @@ export class PlaybackController extends SimpleEventEmitter {
    * ✅ UNIFIED PLAY - Tek play fonksiyonu
    */
   async play(startPosition = null) {
-    console.log('🎵 PlaybackController.play() called', { startPosition, isPlaying: this.state.isPlaying });
+    console.log('🎵 PlaybackController.play() called', { startPosition, isPlaying: this.state.isPlaying, playbackState: this.state.playbackState });
+
+    // ✅ CRITICAL FIX: If paused, use resume() instead of play()
+    if (this.state.playbackState === PLAYBACK_STATES.PAUSED) {
+      console.log('🎵 State is PAUSED, using resume() instead of play()');
+      return await this._resume();
+    }
 
     if (this.state.isPlaying) {
       console.log('⚠️ Already playing, returning false');
@@ -303,6 +309,50 @@ export class PlaybackController extends SimpleEventEmitter {
   }
 
   /**
+   * ✅ UNIFIED RESUME - Resume from paused position
+   */
+  async _resume() {
+    console.log('🎵 PlaybackController._resume() called');
+
+    if (!this.audioEngine?.playbackManager) {
+      console.error('❌ PlaybackController: PlaybackManager not available');
+      return false;
+    }
+
+    try {
+      // ✅ CRITICAL: Resume AudioContext if suspended
+      if (this.audioEngine.audioContext?.state === 'suspended') {
+        try {
+          await this.audioEngine.audioContext.resume();
+          console.log('🎵 AudioContext resumed for playback');
+        } catch (resumeError) {
+          console.warn('⚠️ Could not resume AudioContext:', resumeError);
+        }
+      }
+
+      // ✅ CRITICAL: Use PlaybackManager.resume() to preserve position
+      await this.audioEngine.playbackManager.resume();
+      console.log('✅ PlaybackController: PlaybackManager.resume() completed');
+
+      // Update state
+      this.state.playbackState = PLAYBACK_STATES.PLAYING;
+      this.state.isPlaying = true;
+      this.state.lastUpdateTime = Date.now();
+
+      // Start position tracking
+      this._startPositionLoop();
+
+      // Emit state change
+      this._emitStateChange('play');
+
+      return true;
+    } catch (error) {
+      console.error('❌ PlaybackController._resume() failed:', error);
+      return false;
+    }
+  }
+
+  /**
    * ✅ UNIFIED PAUSE
    */
   async pause() {
@@ -385,8 +435,9 @@ export class PlaybackController extends SimpleEventEmitter {
         return await this.pause();
 
       case PLAYBACK_STATES.PAUSED:
-        console.log('🎵 State is PAUSED, calling play() to resume');
-        return await this.play(); // Resume from current position
+        console.log('🎵 State is PAUSED, calling resume()');
+        // ✅ FIX: Use PlaybackManager.resume() instead of play() to preserve position
+        return await this._resume();
 
       case PLAYBACK_STATES.STOPPED:
       default:
@@ -490,7 +541,12 @@ export class PlaybackController extends SimpleEventEmitter {
   // =================== SETTINGS ===================
 
   setBPM(bpm) {
-    this.state.bpm = Math.max(60, Math.min(300, bpm));
+    // ✅ FIX: Remove BPM restrictions - only ensure positive value
+    if (bpm <= 0 || isNaN(bpm)) {
+      console.warn('Invalid BPM value:', bpm);
+      return;
+    }
+    this.state.bpm = bpm;
     this.audioEngine.playbackManager.setBPM(this.state.bpm);
     this._emitStateChange('bpm-change');
   }

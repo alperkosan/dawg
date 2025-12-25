@@ -3,6 +3,9 @@
 import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
 import { AudioContextService } from '@/lib/services/AudioContextService';
+import { EffectService } from '@/lib/services/EffectService';
+import { MixerService } from '@/lib/services/MixerService';
+import { AudioEngineGlobal } from '@/lib/core/AudioEngineGlobal';
 import { normalizeEffectParam, normalizeEffectSettings } from '@/lib/audio/effects/parameterMappings.js';
 // ✅ Empty project - no initial data
 import { pluginRegistry } from '@/config/pluginConfig';
@@ -69,9 +72,7 @@ export const useMixerStore = create((set, get) => ({
     newMutedChannels.has(trackId) ? newMutedChannels.delete(trackId) : newMutedChannels.add(trackId);
     set({ mutedChannels: newMutedChannels });
     // SES MOTORUNA KOMUT GÖNDER (sadece mevcut metodları çağır)
-    if (AudioContextService.setMuteState) {
-      AudioContextService.setMuteState(trackId, newMutedChannels.has(trackId));
-    }
+    MixerService.setMuteState(trackId, newMutedChannels.has(trackId));
   },
 
   toggleSolo: (trackId) => {
@@ -80,9 +81,7 @@ export const useMixerStore = create((set, get) => ({
     newSoloedChannels.has(trackId) ? newSoloedChannels.delete(trackId) : newSoloedChannels.add(trackId);
     set({ soloedChannels: newSoloedChannels });
     // SES MOTORUNA KOMUT GÖNDER - mutedChannels'ı da gönder ki restore edebilsin
-    if (AudioContextService.setSoloState) {
-      AudioContextService.setSoloState(newSoloedChannels, mutedChannels);
-    }
+    MixerService.setSoloState(newSoloedChannels, mutedChannels);
   },
 
   toggleMono: (trackId) => {
@@ -90,9 +89,7 @@ export const useMixerStore = create((set, get) => ({
     newMonoChannels.has(trackId) ? newMonoChannels.delete(trackId) : newMonoChannels.add(trackId);
     set({ monoChannels: newMonoChannels });
     // Send to audio engine
-    if (AudioContextService.setMonoState) {
-      AudioContextService.setMonoState(trackId, newMonoChannels.has(trackId));
-    }
+    MixerService.setMonoState(trackId, newMonoChannels.has(trackId));
   },
 
   handleMixerParamChange: (trackId, param, value) => {
@@ -119,7 +116,7 @@ export const useMixerStore = create((set, get) => ({
     // 🎛️ DYNAMIC MIXER: Route to appropriate control
     if (trackId === 'master') {
       // Master controls
-      const audioEngine = AudioContextService.getAudioEngine();
+      const audioEngine = AudioEngineGlobal.get();
 
       if (param === 'volume' && audioEngine?.setMasterVolume) {
         // Convert dB to linear gain (0 dB = 1.0, -6 dB = 0.5, etc.)
@@ -137,20 +134,18 @@ export const useMixerStore = create((set, get) => ({
       if (param === 'volume') {
         // Convert dB to linear gain
         const linearGain = Math.pow(10, value / 20);
-        AudioContextService.setInsertGain(trackId, linearGain);
+        MixerService.setInsertGain(trackId, linearGain);
         return;
       }
 
       if (param === 'pan') {
-        AudioContextService.setInsertPan(trackId, value);
+        MixerService.setInsertPan(trackId, value);
         return;
       }
     }
 
     // Fallback for other parameters (EQ, etc.)
-    if (AudioContextService.updateMixerParam) {
-      AudioContextService.updateMixerParam(trackId, param, value);
-    }
+    MixerService.updateMixerParam(trackId, param, value);
   },
 
   handleMixerEffectAdd: (trackId, effectType) => {
@@ -229,7 +224,7 @@ export const useMixerStore = create((set, get) => ({
       });
 
       // Create in AudioEngine (async) - use cloned settings here too
-      AudioContextService.addEffectToInsert(trackId, effectType, clonedSettings)
+      EffectService.addEffect(trackId, effectType, clonedSettings)
         .then(effectId => {
           console.log('🔄 [useMixerStore] AudioEngine returned effectId:', {
             tempId,
@@ -306,14 +301,12 @@ export const useMixerStore = create((set, get) => ({
     // 🎛️ DYNAMIC MIXER: Remove effect from insert
     if (trackId === 'master') {
       // Master effects handled differently
-      if (AudioContextService.rebuildSignalChain) {
-        AudioContextService.rebuildSignalChain(trackId, newTrackState).catch(error => {
-          console.error('❌ Failed to rebuild master chain:', error);
-        });
-      }
+      EffectService.rebuildSignalChain(trackId, newTrackState).catch(error => {
+        console.error('❌ Failed to rebuild master chain:', error);
+      });
     } else {
       // Regular track - use dynamic mixer insert API
-      AudioContextService.removeEffectFromInsert(trackId, audioEngineEffectId);
+      EffectService.removeEffect(trackId, audioEngineEffectId);
     }
 
     // ✅ PERFORMANCE: Use StoreManager for panel cleanup
@@ -345,12 +338,10 @@ export const useMixerStore = create((set, get) => ({
 
     // 🎛️ DYNAMIC MIXER: Use toggleEffectBypass instead of rebuildSignalChain
     // toggleEffectBypass is more efficient and uses MixerInsert API
-    if (AudioContextService.toggleEffectBypass) {
-      AudioContextService.toggleEffectBypass(trackId, effectId, !currentBypass);
-    }
+    EffectService.toggleBypass(trackId, effectId, !currentBypass);
   },
 
-  handleMixerEffectChange: (trackId, effectId, paramOrSettings, value) => {
+  handleMixerEffectChange: (trackId, effectId, paramOrSettings, value, options = {}) => {
     let needsRebuild = false;
 
     set(state => {
@@ -365,6 +356,20 @@ export const useMixerStore = create((set, get) => ({
                   ...fx,
                   settings: normalizeEffectSettings(effectType, fx.settings || {})
                 };
+
+                // ✅ FIX: Save preset information if provided
+                if (options.presetId !== undefined) {
+                  newFx.presetId = options.presetId;
+                }
+                if (options.presetName !== undefined) {
+                  newFx.presetName = options.presetName;
+                }
+                // Clear preset info if explicitly cleared
+                if (options.clearPreset === true) {
+                  delete newFx.presetId;
+                  delete newFx.presetName;
+                }
+
                 if (typeof paramOrSettings === 'string') {
                   const canonicalParam = normalizeEffectParam(effectType, paramOrSettings);
                   if (canonicalParam === 'bypass' || canonicalParam === 'sidechainSource') {
@@ -409,16 +414,16 @@ export const useMixerStore = create((set, get) => ({
     // 🎛️ DYNAMIC MIXER: Update effect parameter
     if (trackId === 'master') {
       // Master effects - use rebuild
-      if (needsRebuild && AudioContextService.rebuildSignalChain) {
-        AudioContextService.rebuildSignalChain(trackId, updatedTrack);
-      } else if (AudioContextService.updateEffectParam) {
+      if (needsRebuild) {
+        EffectService.rebuildSignalChain(trackId, updatedTrack);
+      } else {
         if (typeof paramOrSettings === 'string') {
           const canonicalParam = normalizeEffectParam(effectType, paramOrSettings);
-          AudioContextService.updateEffectParam(trackId, effectId, canonicalParam, value);
+          EffectService.updateEffectParam(trackId, effectId, canonicalParam, value);
         } else {
           Object.entries(paramOrSettings).forEach(([param, val]) => {
             const canonicalParam = normalizeEffectParam(effectType, param);
-            AudioContextService.updateEffectParam(trackId, effectId, canonicalParam, val);
+            EffectService.updateEffectParam(trackId, effectId, canonicalParam, val);
           });
         }
       }
@@ -426,17 +431,17 @@ export const useMixerStore = create((set, get) => ({
       // Regular track - use dynamic mixer insert API
       if (typeof paramOrSettings === 'string') {
         const canonicalParam = normalizeEffectParam(effectType, paramOrSettings);
-        AudioContextService.updateInsertEffectParam(trackId, effectId, canonicalParam, value);
+        EffectService.updateEffectParam(trackId, effectId, canonicalParam, value);
       } else {
         // Multiple parameters
         Object.entries(paramOrSettings).forEach(([param, val]) => {
           const canonicalParam = normalizeEffectParam(effectType, param);
-          AudioContextService.updateInsertEffectParam(trackId, effectId, canonicalParam, val);
+          EffectService.updateEffectParam(trackId, effectId, canonicalParam, val);
         });
       }
     }
   },
-  
+
   reorderEffect: (trackId, sourceIndex, destinationIndex) => {
     // Update store
     set(state => {
@@ -453,11 +458,7 @@ export const useMixerStore = create((set, get) => ({
     });
 
     // ✅ CRITICAL FIX: Reorder effects in AudioEngine (preserves settings)
-    if (AudioContextService.reorderInsertEffects) {
-      AudioContextService.reorderInsertEffects(trackId, sourceIndex, destinationIndex);
-    } else {
-      console.warn('⚠️ AudioContextService.reorderInsertEffects not available');
-    }
+    EffectService.reorderEffects(trackId, sourceIndex, destinationIndex);
   },
 
   setTrackName: (trackId, newName) => {
@@ -482,7 +483,7 @@ export const useMixerStore = create((set, get) => ({
     const nextNumber = tracksOfType.length + 1;
 
     const newTrack = {
-      id: `${type}-${uuidv4()}`,
+      id: type === 'bus' ? `bus-${nextNumber}` : `${type}-${uuidv4()}`,
       name: type === 'bus' ? `Bus ${nextNumber}` : `Track ${nextNumber}`,
       type: type,
       volume: 0,
@@ -508,14 +509,14 @@ export const useMixerStore = create((set, get) => ({
 
     // 🎛️ DYNAMIC MIXER: Create mixer insert for this track
     // ✅ FIX: Create insert synchronously and verify it was created
-    const audioEngine = AudioContextService.getAudioEngine();
-    
+    const audioEngine = AudioEngineGlobal.get();
+
     if (!audioEngine) {
       console.warn(`⚠️ AudioEngine not ready, mixer insert for ${newTrack.id} will be created later`);
       // Store will be synced when engine is ready via _syncMixerTracksToAudioEngine
     } else {
       const insert = AudioContextService.createMixerInsert(newTrack.id, newTrack.name);
-      
+
       if (!insert) {
         console.warn(`⚠️ Failed to create mixer insert for ${newTrack.id}, will retry on instrument routing`);
       } else {
@@ -583,7 +584,7 @@ export const useMixerStore = create((set, get) => ({
     });
 
     // 🎛️ DYNAMIC MIXER: Remove mixer insert for this track
-    AudioContextService.removeMixerInsert(trackId);
+    MixerService.removeMixerInsert(trackId);
 
     console.log(`✅ Track removed: ${trackId}`);
   },
@@ -635,8 +636,12 @@ export const useMixerStore = create((set, get) => ({
       )
     }));
     // Notify audio engine
-    if (AudioContextService.updateSendChannel) {
-      AudioContextService.updateSendChannel(sendId, updates);
+    // Notify audio engine
+    if (updates.masterLevel !== undefined) {
+      MixerService.updateMixerParam(sendId, 'volume', updates.masterLevel);
+    }
+    if (updates.pan !== undefined) {
+      MixerService.updateMixerParam(sendId, 'pan', updates.pan);
     }
   },
 
@@ -665,6 +670,40 @@ export const useMixerStore = create((set, get) => ({
     });
   },
 
+  // ✅ NEW: Batch update for atomic render (Wasm integration)
+  batchUpdateLevels: (levelsMap) => {
+    // Only update if enough time has passed (throttle)
+    const now = Date.now();
+    if (now - get()._levelMeterUpdateTimestamp < get()._levelMeterUpdateInterval) {
+      return;
+    }
+
+    // Create new map
+    const newLevelMeterData = new Map(get().levelMeterData);
+    let hasChanges = false;
+
+    // levelsMap is Object { trackId: { left, right } }
+    for (const [trackId, data] of Object.entries(levelsMap)) {
+      newLevelMeterData.set(trackId, {
+        left: data.left,
+        right: data.right,
+        peak: Math.max(data.left, data.right)
+      });
+      hasChanges = true;
+    }
+
+    if (hasChanges) {
+      set({
+        levelMeterData: newLevelMeterData,
+        _levelMeterUpdateTimestamp: now
+      });
+    }
+  },
+
+  resetLevelMeters: () => {
+    set({ levelMeterData: new Map() });
+  },
+
   handleSendChange: (trackId, sendParam, value) => {
     set(state => ({
       mixerTracks: state.mixerTracks.map(track => {
@@ -676,9 +715,9 @@ export const useMixerStore = create((set, get) => ({
       })
     }));
     // Notify audio engine
-    if (AudioContextService.updateSendLevel) {
-      AudioContextService.updateSendLevel(trackId, sendParam, value);
-    }
+    // Notify audio engine
+    // sendParam is likely 'send1', 'send2' etc which matches sendId
+    MixerService.setSendLevel(trackId, sendParam, value);
   },
 
   // =================== SEND/INSERT ROUTING ACTIONS ===================
@@ -745,12 +784,47 @@ export const useMixerStore = create((set, get) => ({
     });
 
     // Notify audio engine to create send routing
-    const audioEngine = AudioContextService.getAudioEngine();
+    const audioEngine = AudioEngineGlobal.get();
     if (audioEngine && audioEngine.createSend) {
       audioEngine.createSend(trackId, busId, level, preFader);
     }
 
     console.log(`✅ Send added: ${trackId} → ${busId} (level: ${level}, preFader: ${preFader})`);
+  },
+
+  /**
+   * Route track output exclusively to another track (Submix)
+   * Disconnects from Master.
+   * @param {string} sourceId - Source track ID
+   * @param {string} targetId - Target track/bus ID ('master' for reset)
+   */
+  routeToTrack: (sourceId, targetId) => {
+    // Prevent routing to self
+    if (sourceId === targetId) return;
+
+    set(state => ({
+      mixerTracks: state.mixerTracks.map(track => {
+        if (track.id === sourceId) {
+          return { ...track, output: targetId };
+        }
+        return track;
+      })
+    }));
+
+    // Notify Engine
+    const audioEngine = AudioEngineGlobal.get();
+    if (audioEngine) {
+      if (targetId === 'master') {
+        if (audioEngine.routeInsertToMaster) {
+          audioEngine.routeInsertToMaster(sourceId);
+        }
+      } else {
+        if (audioEngine.routeInsertToBusExclusive) {
+          audioEngine.routeInsertToBusExclusive(sourceId, targetId);
+        }
+      }
+    }
+    console.log(`🔀 Routed ${sourceId} exclusively to ${targetId}`);
   },
 
   /**
@@ -774,7 +848,7 @@ export const useMixerStore = create((set, get) => ({
     });
 
     // Notify audio engine to remove send routing
-    const audioEngine = AudioContextService.getAudioEngine();
+    const audioEngine = AudioEngineGlobal.get();
     if (audioEngine && audioEngine.removeSend) {
       audioEngine.removeSend(trackId, busId);
     }
@@ -804,7 +878,7 @@ export const useMixerStore = create((set, get) => ({
     });
 
     // Notify audio engine to update send level
-    const audioEngine = AudioContextService.getAudioEngine();
+    const audioEngine = AudioEngineGlobal.get();
     if (audioEngine && audioEngine.updateSendLevel) {
       audioEngine.updateSendLevel(trackId, busId, level);
     }
@@ -841,7 +915,7 @@ export const useMixerStore = create((set, get) => ({
     });
 
     // Notify audio engine to rebuild send routing
-    const audioEngine = AudioContextService.getAudioEngine();
+    const audioEngine = AudioEngineGlobal.get();
     if (audioEngine && audioEngine.updateSendPreFader) {
       audioEngine.updateSendPreFader(trackId, busId, newPreFaderValue);
     }
@@ -869,7 +943,7 @@ export const useMixerStore = create((set, get) => ({
     });
 
     // Notify audio engine to reroute output
-    const audioEngine = AudioContextService.getAudioEngine();
+    const audioEngine = AudioEngineGlobal.get();
     if (audioEngine && audioEngine.setTrackOutput) {
       audioEngine.setTrackOutput(trackId, targetId || 'master');
     }

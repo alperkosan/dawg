@@ -31,13 +31,14 @@ import { getCategoryColors } from '../PluginDesignSystem';
 import { useParameterBatcher } from '@/services/ParameterBatcher';
 import { useRenderer } from '@/services/CanvasRenderManager';
 import { useWebGLSpectrum } from '@/services/WebGLSpectrumAnalyzer';
-import { EQCalculations } from '@/lib/audio/EQCalculations';
+import { EQCalculations } from '@/lib/audio/EQCalculations.js';
 import { AudioContextService } from '@/lib/services/AudioContextService';
 import { useMixerStore } from '@/store/useMixerStore';
 import {
   Plus, Volume2, VolumeX, Headphones,
   Trash2, Power, Settings
 } from 'lucide-react';
+import { Checkbox } from '@/components/controls';
 
 // Constants
 const MIN_FREQ = 20;
@@ -260,6 +261,128 @@ const BandControl = ({
             {band.q.toFixed(2)}
           </div>
         </div>
+      </div>
+
+      {/* ✅ NEW: Dynamic EQ Controls */}
+      <div className="mt-3 pt-3 border-t border-white/5" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-2">
+          <div className="text-[9px] text-gray-400 uppercase">Dynamic EQ</div>
+          <label className="flex items-center cursor-pointer">
+            <input
+              type="checkbox"
+              checked={band.dynamicEnabled || false}
+              onChange={(e) => onChange(index, 'dynamicEnabled', e.target.checked)}
+              className="w-3 h-3 rounded transition-all appearance-none cursor-pointer"
+              style={{
+                border: `1px solid ${bandColor}30`,
+                backgroundColor: band.dynamicEnabled ? bandColor : 'rgba(0, 0, 0, 0.5)',
+                borderColor: band.dynamicEnabled ? bandColor : `${bandColor}30`,
+                boxShadow: band.dynamicEnabled ? `0 0 6px ${bandColor}40` : 'none',
+              }}
+            />
+            {band.dynamicEnabled && (
+              <svg
+                className="absolute w-2 h-2 pointer-events-none"
+                style={{
+                  left: '1px',
+                  top: '1px',
+                  color: '#fff',
+                  position: 'relative',
+                  marginLeft: '-11px',
+                }}
+                viewBox="0 0 12 12"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path
+                  d="M2 6L5 9L10 2"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            )}
+          </label>
+        </div>
+
+        {band.dynamicEnabled && (
+          <div className="grid grid-cols-2 gap-2 animate-in fade-in duration-200">
+            <div>
+              <div className="text-[8px] text-gray-500 mb-1">THRESHOLD</div>
+              <input
+                type="range"
+                min="-60"
+                max="0"
+                step="0.1"
+                value={band.threshold !== undefined ? band.threshold : -12}
+                onChange={(e) => onChange(index, 'threshold', parseFloat(e.target.value))}
+                onClick={(e) => e.stopPropagation()}
+                className="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                style={{
+                  background: `linear-gradient(to right, ${bandColor} 0%, ${bandColor} ${((band.threshold || -12) + 60) / 60 * 100}%, rgba(255,255,255,0.1) ${((band.threshold || -12) + 60) / 60 * 100}%, rgba(255,255,255,0.1) 100%)`
+                }}
+              />
+              <div className="text-[9px] text-gray-400 mt-0.5 text-center">
+                {(band.threshold || -12).toFixed(1)} dB
+              </div>
+            </div>
+
+            <div>
+              <div className="text-[8px] text-gray-500 mb-1">RATIO</div>
+              <input
+                type="range"
+                min="1"
+                max="20"
+                step="0.1"
+                value={band.ratio !== undefined ? band.ratio : 2}
+                onChange={(e) => onChange(index, 'ratio', parseFloat(e.target.value))}
+                onClick={(e) => e.stopPropagation()}
+                className="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                style={{
+                  background: `linear-gradient(to right, ${bandColor} 0%, ${bandColor} ${((band.ratio || 2) - 1) / 19 * 100}%, rgba(255,255,255,0.1) ${((band.ratio || 2) - 1) / 19 * 100}%, rgba(255,255,255,0.1) 100%)`
+                }}
+              />
+              <div className="text-[9px] text-gray-400 mt-0.5 text-center">
+                1:{(band.ratio || 2).toFixed(1)}
+              </div>
+            </div>
+
+            <div>
+              <div className="text-[8px] text-gray-500 mb-1">ATTACK</div>
+              <input
+                type="range"
+                min="0.1"
+                max="100"
+                step="0.1"
+                value={band.attack !== undefined ? band.attack : 10}
+                onChange={(e) => onChange(index, 'attack', parseFloat(e.target.value))}
+                onClick={(e) => e.stopPropagation()}
+                className="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+              />
+              <div className="text-[9px] text-gray-400 mt-0.5 text-center">
+                {(band.attack || 10).toFixed(1)} ms
+              </div>
+            </div>
+
+            <div>
+              <div className="text-[8px] text-gray-500 mb-1">RELEASE</div>
+              <input
+                type="range"
+                min="1"
+                max="500"
+                step="1"
+                value={band.release !== undefined ? band.release : 100}
+                onChange={(e) => onChange(index, 'release', parseFloat(e.target.value))}
+                onClick={(e) => e.stopPropagation()}
+                className="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+              />
+              <div className="text-[9px] text-gray-400 mt-0.5 text-center">
+                {(band.release || 100).toFixed(0)} ms
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -704,7 +827,18 @@ export const MultiBandEQUI_V2 = ({ trackId, effect, effectNode, definition }) =>
   const { handleMixerEffectChange } = useMixerStore();
 
   // State
-  const [bands, setBands] = useState(effect.settings.bands || []);
+  const [bands, setBands] = useState(() => {
+    // ✅ NEW: Ensure all bands have Dynamic EQ parameters
+    const initialBands = effect.settings.bands || [];
+    return initialBands.map(band => ({
+      ...band,
+      dynamicEnabled: band.dynamicEnabled !== undefined ? band.dynamicEnabled : false,
+      threshold: band.threshold !== undefined ? band.threshold : -12,
+      ratio: band.ratio !== undefined ? band.ratio : 2,
+      attack: band.attack !== undefined ? band.attack : 10,
+      release: band.release !== undefined ? band.release : 100
+    }));
+  });
   const [wet, setWet] = useState(effect.settings.wet || 1.0);
   const [output, setOutput] = useState(effect.settings.output || 1.0);
   const [activeBandIndex, setActiveBandIndex] = useState(0);
@@ -715,17 +849,6 @@ export const MultiBandEQUI_V2 = ({ trackId, effect, effectNode, definition }) =>
   // Use effectNode prop (passed from WorkspacePanel)
   const workletNode = effectNode || effect.node;
 
-  // Debug: Log connection status
-  useEffect(() => {
-    console.log('[MultiBandEQ] Connection status:', {
-      hasEffectNode: !!effectNode,
-      hasEffectDotNode: !!effect.node,
-      hasWorkletNode: !!workletNode,
-      hasPort: !!workletNode?.port,
-      effectId: effect.id,
-      trackId
-    });
-  }, [effectNode, effect.node, workletNode, effect.id, trackId]);
 
   // Get audio context for spectrum analyzer
   const audioContext = AudioContextService.audioEngine?.audioContext;
@@ -754,9 +877,21 @@ export const MultiBandEQUI_V2 = ({ trackId, effect, effectNode, definition }) =>
   const { setParams } = useParameterBatcher(workletNode);
 
   // Sync with effect.settings when presets are loaded
+  // ✅ FIX: Use ref to prevent infinite loop
+  const prevSettingsRef = useRef(null);
+
   useEffect(() => {
+    // Only update if settings actually changed (deep comparison for bands)
+    const settingsChanged =
+      JSON.stringify(prevSettingsRef.current?.bands) !== JSON.stringify(effect.settings.bands) ||
+      prevSettingsRef.current?.wet !== effect.settings.wet ||
+      prevSettingsRef.current?.output !== effect.settings.output;
+
+    if (!settingsChanged) return;
+
+    // Preset loaded - bands updated
+
     if (effect.settings.bands) {
-      console.log('[MultiBandEQ] Preset loaded, updating bands:', effect.settings.bands);
       setBands(effect.settings.bands);
     }
     if (effect.settings.wet !== undefined) {
@@ -765,7 +900,14 @@ export const MultiBandEQUI_V2 = ({ trackId, effect, effectNode, definition }) =>
     if (effect.settings.output !== undefined) {
       setOutput(effect.settings.output);
     }
-  }, [effect.settings]);
+
+    // Store current settings
+    prevSettingsRef.current = {
+      bands: effect.settings.bands,
+      wet: effect.settings.wet,
+      output: effect.settings.output
+    };
+  }, [effect.settings.bands, effect.settings.wet, effect.settings.output]);
 
   // Update effect when bands change
   useEffect(() => {
@@ -784,7 +926,7 @@ export const MultiBandEQUI_V2 = ({ trackId, effect, effectNode, definition }) =>
       bands: bands.filter(b => b.active)
     });
 
-    console.log('[MultiBandEQ] Updated bands:', bands.filter(b => b.active).length);
+    // Bands updated
   }, [bands, wet, output, workletNode, setParams]);
 
   // Band management
@@ -810,7 +952,13 @@ export const MultiBandEQUI_V2 = ({ trackId, effect, effectNode, definition }) =>
       frequency: 1000,
       gain: 0,
       q: 1.0,
-      active: true
+      active: true,
+      // ✅ NEW: Dynamic EQ default parameters
+      dynamicEnabled: false,
+      threshold: -12,
+      ratio: 2,
+      attack: 10,
+      release: 100
     };
 
     setBands(prev => {
@@ -896,17 +1044,17 @@ export const MultiBandEQUI_V2 = ({ trackId, effect, effectNode, definition }) =>
 
                 {/* EQ Curve (foreground) */}
                 <EQCurveCanvas
-                bands={bands}
-                onBandChange={handleBandChange}
-                activeBandIndex={activeBandIndex}
-                setActiveBandIndex={setActiveBandIndex}
-                soloedBand={soloedBand}
-                mutedBands={mutedBands}
-                categoryColors={categoryColors}
-                canvasDimensions={canvasDimensions}
-                onDimensionsChange={setCanvasDimensions}
-                onSolo={handleSolo}
-              />
+                  bands={bands}
+                  onBandChange={handleBandChange}
+                  activeBandIndex={activeBandIndex}
+                  setActiveBandIndex={setActiveBandIndex}
+                  soloedBand={soloedBand}
+                  mutedBands={mutedBands}
+                  categoryColors={categoryColors}
+                  canvasDimensions={canvasDimensions}
+                  onDimensionsChange={setCanvasDimensions}
+                  onSolo={handleSolo}
+                />
               </div>
             </div>
 

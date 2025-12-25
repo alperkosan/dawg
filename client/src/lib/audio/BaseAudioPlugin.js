@@ -12,6 +12,7 @@
  * @date 2025-10-09
  */
 
+import { EffectService } from '@/lib/services/EffectService';
 import { AudioContextService } from '@/lib/services/AudioContextService';
 
 export class BaseAudioPlugin {
@@ -93,7 +94,7 @@ export class BaseAudioPlugin {
     }
 
     try {
-      const effectNode = AudioContextService.getEffectAudioNode(this.trackId, this.effectId);
+      const effectNode = EffectService.getEffectNode(this.trackId, this.effectId);
 
       if (!effectNode) {
         console.warn(`⚠️ No effect node found for track:${this.trackId}, effect:${this.effectId}`);

@@ -37,8 +37,43 @@ class PresetStorage {
    */
   load(pluginType) {
     try {
+      // Load user presets (standard)
       const allPresets = JSON.parse(localStorage.getItem(this.storageKey) || '{}');
-      return allPresets[pluginType] || [];
+      const userPresets = allPresets[pluginType] || [];
+
+      // Load downloaded presets (community)
+      const downloadedPresets = JSON.parse(localStorage.getItem('downloaded_presets') || '[]');
+
+      const filteredDownloads = downloadedPresets
+        .filter(p => {
+          // 1. Direct engine match (case-insensitive)
+          const engineMatch = p.engineType?.toLowerCase() === pluginType?.toLowerCase();
+
+          // 2. Strict category match for specific plugin types
+          // If we're an instrument, we only want instrument presets
+          const isInstrument = ['zenith', 'sampler', 'sample', 'vasynth', 'synth'].includes(pluginType?.toLowerCase());
+
+          const categoryMatch = isInstrument
+            ? p.presetType === 'instrument'
+            : p.presetType === 'effect';
+
+          // 3. Fallback for "generic" entries (legacy or mislabeled)
+          // Allow 'zenith' as a fallback engine ONLY for instruments
+          const fallbackMatch = (p.engineType?.toLowerCase() === 'zenith' || !p.engineType) &&
+            (isInstrument && p.presetType === 'instrument');
+
+          return engineMatch || (categoryMatch && (engineMatch || fallbackMatch));
+        })
+        .map(p => ({
+          ...p,
+          id: p.id,
+          name: p.name,
+          settings: p.presetData || p.settings, // Uniform settings key
+          isDownloaded: true,
+          author: p.author || 'Community'
+        }));
+
+      return [...userPresets, ...filteredDownloads];
     } catch (e) {
       console.error('Failed to load presets:', e);
       return [];
@@ -76,12 +111,29 @@ class PresetStorage {
    */
   delete(pluginType, presetId) {
     try {
+      // Try deleting from standard user presets
       const allPresets = JSON.parse(localStorage.getItem(this.storageKey) || '{}');
-      if (!allPresets[pluginType]) return false;
+      if (allPresets[pluginType]) {
+        const initialCount = allPresets[pluginType].length;
+        allPresets[pluginType] = allPresets[pluginType].filter(p => p.id !== presetId);
 
-      allPresets[pluginType] = allPresets[pluginType].filter(p => p.id !== presetId);
-      localStorage.setItem(this.storageKey, JSON.stringify(allPresets));
-      return true;
+        if (allPresets[pluginType].length < initialCount) {
+          localStorage.setItem(this.storageKey, JSON.stringify(allPresets));
+          return true;
+        }
+      }
+
+      // Try deleting from downloaded presets
+      const downloadedPresets = JSON.parse(localStorage.getItem('downloaded_presets') || '[]');
+      const initialDownloadCount = downloadedPresets.length;
+      const filteredDownloads = downloadedPresets.filter(p => p.id !== presetId);
+
+      if (filteredDownloads.length < initialDownloadCount) {
+        localStorage.setItem('downloaded_presets', JSON.stringify(filteredDownloads));
+        return true;
+      }
+
+      return false;
     } catch (e) {
       console.error('Failed to delete preset:', e);
       return false;

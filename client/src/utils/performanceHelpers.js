@@ -6,8 +6,15 @@
  * import { addManyChannels } from '@/utils/performanceHelpers'
  * addManyChannels(50)
  */
+import { useMixerStore } from '@/store/useMixerStore';
+
+/**
+ * Add multiple channels to test performance
+ * Usage: In browser console, run:
+ * import { addManyChannels } from '@/utils/performanceHelpers'
+ * addManyChannels(50)
+ */
 export const addManyChannels = (count = 50) => {
-  const { useMixerStore } = require('@/store/useMixerStore');
   const store = useMixerStore.getState();
 
   console.log(`🚀 Adding ${count} channels...`);
@@ -159,7 +166,6 @@ export const runPerformanceTest = async () => {
   // Test 4: Simulate fader movements
   setTimeout(() => {
     console.log('\n📋 Test 4: Simulating fader movements...');
-    const { useMixerStore } = require('@/store/useMixerStore');
     const store = useMixerStore.getState();
     const tracks = store.mixerTracks;
 
@@ -182,7 +188,6 @@ export const runPerformanceTest = async () => {
     memoryMonitor?.();
     console.log(`🎯 Final FPS: ${fpsMonitor.getFPS()}`);
 
-    const { useMixerStore } = require('@/store/useMixerStore');
     console.log(`📊 Total tracks: ${useMixerStore.getState().mixerTracks.length}`);
 
     console.log('\n💡 Performance Tips:');

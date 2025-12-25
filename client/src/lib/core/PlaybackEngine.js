@@ -222,9 +222,13 @@ export class PlaybackEngine {
   // =================== SETTINGS ===================
 
   setBPM(bpm) {
-    const newBpm = Math.max(60, Math.min(300, bpm));
-    this.state.bpm = newBpm;
-    this.audioEngine.playbackManager?.setBPM(newBpm);
+    // ✅ FIX: Remove BPM restrictions - only ensure positive value
+    if (bpm <= 0 || isNaN(bpm)) {
+      console.warn('Invalid BPM value:', bpm);
+      return;
+    }
+    this.state.bpm = bpm;
+    this.audioEngine.playbackManager?.setBPM(bpm);
     this._emitStateChange('bpm-change');
   }
 

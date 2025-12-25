@@ -451,140 +451,70 @@ export const usePreviewPlayerStore = create((set, get) => ({
 
   /**
    * Preview'ı çal/durdur
+   * ✅ FIX: Use MediaPlayer for consistent playback across all components
    */
-  playPreview: (url) => {
-    const state = get();
-    const context = getAudioContext();
-
-    // Toggle: Aynı dosya çalıyorsa durdur
-    if (state.isPlaying && state.playingUrl === url) {
-      if (previewSource) {
-        previewSource.stop();
-        previewSource.disconnect();
-        previewSource = null;
-      }
-      set({ isPlaying: false, playingUrl: null });
-      return;
-    }
-
-    // Farklı bir dosya çalıyorsa önce onu durdur
-    if (previewSource) {
-      previewSource.stop();
-      previewSource.disconnect();
-      previewSource = null;
-    }
-
-    // Buffer hazır değilse cache'ten al veya yükle
-    let bufferToPlay = state.waveformBuffer;
-
-    // Eğer farklı dosya çalınmak isteniyorsa cache'ten al
-    if (state.currentFileUrl !== url) {
-      // Önce full cache'inden kontrol et (daha iyi kalite), yoksa preview cache'inden
-      bufferToPlay = getFromCache(`${url}:full`) || getFromCache(`${url}:preview`);
-
-      if (!bufferToPlay) {
-        console.log('[PreviewPlayer] Buffer not ready, loading preview first...');
-        // ✅ FIX: Load and auto-play WITHOUT recursive call
-        set({ loadingUrl: url, error: null });
-        loadAudioBuffer(url, set, get, false).then(() => {
-          // Yükleme bitince otomatik çal (direkt, recursive call yok!)
-          const newState = get();
-          const loadedBuffer = newState.waveformBuffer;
-
-          console.log('[PreviewPlayer] Load complete:', {
-            requestedUrl: url,
-            currentUrl: newState.currentFileUrl,
-            hasBuffer: !!loadedBuffer,
-            match: newState.currentFileUrl === url
-          });
-
-          // ✅ FIX: Distinguish between load failure and URL change
-          if (!loadedBuffer) {
-            console.error('[PreviewPlayer] Buffer load failed for:', url);
-            return;
-          }
-
-          if (newState.currentFileUrl !== url) {
-            console.log('[PreviewPlayer] URL changed during load, skipping auto-play for:', url);
-            return;
-          }
-
-          // Direkt çal - playPreview'i tekrar çağırma!
-          try {
-            const context = getAudioContext();
-
-            // Önceki preview'ı durdur
-            if (previewSource) {
-              previewSource.stop();
-              previewSource.disconnect();
-              previewSource = null;
-            }
-
-            previewSource = context.createBufferSource();
-            previewSource.buffer = loadedBuffer;
-            previewSource.connect(context.destination);
-
-            previewSource.onended = () => {
-              const currentState = get();
-              if (currentState.playingUrl === url) {
-                set({ isPlaying: false, playingUrl: null });
-              }
-              previewSource = null;
-            };
-
-            previewSource.start(0);
-            set({ isPlaying: true, playingUrl: url });
-            console.log(`[PreviewPlayer] Auto-playing after load: ${url}`);
-          } catch (err) {
-            console.error('[PreviewPlayer] Auto-play failed:', err);
-            set({ error: 'Playback failed', isPlaying: false });
-          }
-        }).catch(err => {
-          console.error('[PreviewPlayer] Load failed:', err);
-        });
-        return;
-      }
-    }
-
-    // Buffer yoksa çalma
-    if (!bufferToPlay) {
-      console.warn('[PreviewPlayer] Buffer not available');
-      return;
-    }
-
-    // Çalmaya başla
+  playPreview: async (url) => {
     try {
-      previewSource = context.createBufferSource();
-      previewSource.buffer = bufferToPlay;
-      previewSource.connect(context.destination);
-
-      previewSource.onended = () => {
-        const currentState = get();
-        if (currentState.playingUrl === url) {
-          set({ isPlaying: false, playingUrl: null });
+      const { getMediaPlayer } = await import('@/lib/media/MediaPlayer');
+      const mediaPlayer = getMediaPlayer();
+      
+      // Subscribe to MediaPlayer state changes
+      const unsubscribe = mediaPlayer.subscribe(url, (event, data) => {
+        const state = get();
+        switch (event) {
+          case 'play':
+            set({ isPlaying: true, playingUrl: url });
+            break;
+          case 'pause':
+          case 'ended':
+            if (state.playingUrl === url) {
+              set({ isPlaying: false, playingUrl: null });
+            }
+            break;
+          case 'loadstart':
+            set({ loadingUrl: url });
+            break;
+          case 'loadedmetadata':
+            set({ loadingUrl: null });
+            break;
+          case 'error':
+            set({ error: data.error, loadingUrl: null, isPlaying: false });
+            break;
         }
-        previewSource = null;
-      };
+      });
 
-      previewSource.start(0);
-      set({ isPlaying: true, playingUrl: url });
-      console.log(`[PreviewPlayer] Playing: ${url}`);
+      // Toggle playback
+      await mediaPlayer.toggle(url);
+      
+      // Update state from MediaPlayer
+      const playerState = mediaPlayer.getState();
+      set({
+        isPlaying: playerState.isPlaying && playerState.url === url,
+        playingUrl: playerState.isPlaying ? playerState.url : null,
+        loadingUrl: playerState.isLoading ? url : null
+      });
+
+      // Cleanup subscription after a delay (or keep it for real-time updates)
+      // For now, we'll keep it active and let component unmount handle cleanup
     } catch (err) {
       console.error('[PreviewPlayer] Playback error:', err);
-      set({ error: 'Playback failed', isPlaying: false });
+      set({ error: err.message || 'Playback failed', isPlaying: false });
     }
   },
 
   /**
    * Preview'ı durdur
+   * ✅ FIX: Use MediaPlayer for consistent playback
    */
-  stopPreview: () => {
-    if (previewSource) {
-      previewSource.stop();
-      previewSource.disconnect();
-      previewSource = null;
+  stopPreview: async () => {
+    try {
+      const { getMediaPlayer } = await import('@/lib/media/MediaPlayer');
+      const mediaPlayer = getMediaPlayer();
+      mediaPlayer.stop();
+      set({ isPlaying: false, playingUrl: null });
+    } catch (err) {
+      console.error('[PreviewPlayer] Stop error:', err);
     }
-    set({ isPlaying: false, playingUrl: null });
   },
 
   /**

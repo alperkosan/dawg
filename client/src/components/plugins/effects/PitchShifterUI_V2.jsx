@@ -28,7 +28,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import PluginContainerV2 from '../container/PluginContainerV2';
 import { TwoPanelLayout } from '../layout/TwoPanelLayout';
-import { Knob, Select } from '@/components/controls';
+import { Knob, Select, ModeSelector } from '@/components/controls';
 import { getCategoryColors } from '../PluginDesignSystem';
 import { useParameterBatcher } from '@/services/ParameterBatcher';
 import { useRenderer } from '@/services/CanvasRenderManager';
@@ -228,6 +228,9 @@ const PitchShifterUI_V2 = ({ trackId, effect, effectNode, definition }) => {
     fineTune = 0,
     formantShift = 0,
     quality = 1,
+    // ✅ NEW: Pitch Algorithm and Formant Preservation
+    pitchAlgorithm = 1,
+    formantPreservation = 0,
     inputGain = 0,
     outputGain = 0,
     wet = 1.0
@@ -238,6 +241,9 @@ const PitchShifterUI_V2 = ({ trackId, effect, effectNode, definition }) => {
   const [localFineTune, setLocalFineTune] = useState(fineTune);
   const [localFormantShift, setLocalFormantShift] = useState(formantShift);
   const [localQuality, setLocalQuality] = useState(quality);
+  // ✅ NEW: Pitch Algorithm and Formant Preservation state
+  const [localPitchAlgorithm, setLocalPitchAlgorithm] = useState(pitchAlgorithm);
+  const [localFormantPreservation, setLocalFormantPreservation] = useState(formantPreservation);
   const [localInputGain, setLocalInputGain] = useState(inputGain);
   const [localOutputGain, setLocalOutputGain] = useState(outputGain);
   const [localWet, setLocalWet] = useState(wet);
@@ -323,6 +329,15 @@ const PitchShifterUI_V2 = ({ trackId, effect, effectNode, definition }) => {
       setLocalQuality(effect.settings.quality);
       updates.quality = effect.settings.quality;
     }
+    // ✅ NEW: Pitch Algorithm and Formant Preservation
+    if (effect.settings.pitchAlgorithm !== undefined) {
+      setLocalPitchAlgorithm(effect.settings.pitchAlgorithm);
+      updates.pitchAlgorithm = effect.settings.pitchAlgorithm;
+    }
+    if (effect.settings.formantPreservation !== undefined) {
+      setLocalFormantPreservation(effect.settings.formantPreservation);
+      updates.formantPreservation = effect.settings.formantPreservation;
+    }
     if (effect.settings.inputGain !== undefined) {
       setLocalInputGain(effect.settings.inputGain);
       updates.inputGain = effect.settings.inputGain;
@@ -360,6 +375,18 @@ const PitchShifterUI_V2 = ({ trackId, effect, effectNode, definition }) => {
         break;
       case 'quality':
         setLocalQuality(value);
+        break;
+      // ✅ NEW: Pitch Algorithm and Formant Preservation
+      case 'pitchAlgorithm':
+        setLocalPitchAlgorithm(value);
+        break;
+      case 'formantPreservation':
+        setLocalFormantPreservation(value);
+        // When formant preservation is enabled, disable manual formant shift
+        if (value > 0.5) {
+          setLocalFormantShift(0);
+          setParam('formantShift', 0);
+        }
         break;
       case 'inputGain':
         setLocalInputGain(value);
@@ -415,6 +442,7 @@ const PitchShifterUI_V2 = ({ trackId, effect, effectNode, definition }) => {
                 min={-24}
                 max={24}
                 defaultValue={0}
+                step={1}
                 sizeVariant="medium"
                 category="texture-lab"
                 valueFormatter={(v) => {
@@ -450,7 +478,9 @@ const PitchShifterUI_V2 = ({ trackId, effect, effectNode, definition }) => {
                 defaultValue={0}
                 sizeVariant="medium"
                 category="texture-lab"
+                disabled={localFormantPreservation > 0.5}
                 valueFormatter={(v) => {
+                  if (localFormantPreservation > 0.5) return 'AUTO';
                   if (v > 0) return `+${v.toFixed(0)}st`;
                   if (v < 0) return `${v.toFixed(0)}st`;
                   return '0st';
@@ -469,6 +499,48 @@ const PitchShifterUI_V2 = ({ trackId, effect, effectNode, definition }) => {
                 category="texture-lab"
                 valueFormatter={(v) => `${(v * 100).toFixed(0)}%`}
               />
+            </div>
+
+            {/* ✅ NEW: Algorithm & Formant Controls */}
+            <div className="bg-gradient-to-br from-black/50 to-[#1e1b4b]/30 rounded-xl p-4 border border-[#64c8ff]/20">
+              <div className="text-[9px] text-[#64c8ff]/70 font-bold uppercase tracking-wider mb-3">ALGORITHM & FORMANT</div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="flex flex-col gap-2">
+                  <label className="text-[9px] font-bold tracking-wider uppercase" style={{ color: categoryColors.secondary }}>
+                    PITCH ALGORITHM
+                  </label>
+                  <ModeSelector
+                    modes={[
+                      { id: 0, name: 'PSOLA', description: 'Fast, low CPU, good for real-time' },
+                      { id: 1, name: 'Phase Vocoder', description: 'High quality, FFT-based, zero artifacts' },
+                      { id: 2, name: 'Elastique-like', description: 'Smooth time-stretching, professional quality' }
+                    ]}
+                    activeMode={localPitchAlgorithm}
+                    onChange={(mode) => handleParamChange('pitchAlgorithm', mode)}
+                    category="texture-lab"
+                    compact={true}
+                  />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <label className="text-[9px] font-bold tracking-wider uppercase flex items-center justify-between" style={{ color: categoryColors.secondary }}>
+                    <span>FORMANT PRESERVATION</span>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={localFormantPreservation > 0.5}
+                        onChange={(e) => handleParamChange('formantPreservation', e.target.checked ? 1 : 0)}
+                        className="w-4 h-4 rounded border-[#64c8ff]/30 bg-black/50 checked:bg-[#64c8ff] checked:border-[#64c8ff] focus:ring-2 focus:ring-[#64c8ff]/50"
+                      />
+                      <span className="text-[8px] text-white/70">ENABLED</span>
+                    </label>
+                  </label>
+                  <div className="text-[8px] text-white/50 mt-1">
+                    {localFormantPreservation > 0.5 
+                      ? 'Automatically preserves vocal character when pitch shifting'
+                      : 'Manual formant control'}
+                  </div>
+                </div>
+              </div>
             </div>
 
             {/* Secondary Controls */}

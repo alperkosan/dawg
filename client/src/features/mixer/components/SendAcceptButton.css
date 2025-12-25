@@ -2,20 +2,26 @@
 
 /* Container for all sends (stacked vertically) */
 .send-accept-container {
-  position: absolute;
-  bottom: 4px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 15;
+  margin-top: auto;
+  padding-top: 8px;
+  width: 100%;
   display: flex;
   flex-direction: column;
-  gap: 3px;
   align-items: center;
+  justify-content: flex-end; /* Align to bottom */
+  gap: 4px;
+  position: relative;
+  z-index: 5;
+  /* ✅ FIX: Fixed height to prevent layout shift when toggling between connected/disconnected */
+  min-height: 86px; 
 }
 
 /* Individual send element */
 .send-accept {
   position: relative;
+  width: 100%;
+  display: flex;
+  justify-content: center;
 }
 
 /* =================== DISCONNECTED - COMPACT ARROW =================== */
@@ -24,22 +30,81 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
-  background: rgba(0, 0, 0, 0.3);
+  width: 100%; /* Full width for easier clicking */
+  height: 24px;
+  background: rgba(255, 255, 255, 0.03); /* Subtle background */
   border: 1.5px solid;
   border-radius: 4px;
   color: var(--zenith-text-secondary);
   cursor: pointer;
   transition: all 0.15s;
   padding: 0;
+  margin-bottom: 4px; /* Align with knob visual center */
 }
 
 .send-accept__arrow:hover {
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(255, 255, 255, 0.1);
   color: var(--zenith-accent-cool);
-  transform: scale(1.1);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+}
+
+/* Routed State (Green) */
+.send-accept__arrow.routed {
+  border-color: #22c55e !important; /* Green-500 */
+  color: #22c55e !important;
+  background: rgba(34, 197, 94, 0.1);
+  box-shadow: 0 0 8px rgba(34, 197, 94, 0.2);
+}
+
+/* Context Menu for Routing Options */
+.send-accept__menu {
+  position: fixed; /* Fixed relative to viewport to avoid clipping */
+  background: #1f2937; /* Gray-800 */
+  border: 1px solid #374151; /* Gray-700 */
+  border-radius: 6px;
+  padding: 4px;
+  min-width: 160px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.send-accept__menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 4px;
+  color: #e5e7eb; /* Gray-200 */
+  font-size: 12px;
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  width: 100%;
+  text-align: left;
+}
+
+.send-accept__menu-item:hover {
+  background: #374151; /* Gray-700 */
+  color: #fff;
+}
+
+.send-accept__menu-item.danger {
+  color: #ef4444; /* Red-500 */
+}
+
+.send-accept__menu-item.danger:hover {
+  background: rgba(239, 68, 68, 0.1);
+}
+
+/* Separator */
+.send-accept__menu-separator {
+  height: 1px;
+  background: #374151;
+  margin: 2px 0;
 }
 
 /* =================== CONNECTED - ULTRA COMPACT =================== */
@@ -110,8 +175,8 @@
   font-weight: 700;
   color: var(--zenith-text-primary);
   text-align: center;
-  min-width: 24px;
-  padding: 1px 3px;
+  min-width: 22px;
+  padding: 1px 2px;
   background: rgba(0, 0, 0, 0.5);
   border-radius: 2px;
   margin-top: 1px;
@@ -155,18 +220,5 @@
 
 /* Source track name label (for stacked sends) */
 .send-accept__source-label {
-  font-size: 7px;
-  font-weight: 700;
-  color: var(--zenith-text-secondary);
-  text-align: center;
-  padding: 2px 4px;
-  background: rgba(0, 0, 0, 0.6);
-  border-radius: 2px;
-  margin-top: 2px;
-  max-width: 50px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  line-height: 1;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  display: none;
 }

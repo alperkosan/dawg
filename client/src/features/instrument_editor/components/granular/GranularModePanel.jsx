@@ -2,7 +2,7 @@ import { useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import useInstrumentEditorStore from '@/store/useInstrumentEditorStore';
 import { useInstrumentsStore } from '@/store/useInstrumentsStore';
 import Knob from '../controls/Knob';
-import Slider from '../controls/Slider';
+import { Slider } from '@/components/controls/base/Slider';
 import GranularPatternEditor from './GranularPatternEditor';
 import './GranularModePanel.css';
 

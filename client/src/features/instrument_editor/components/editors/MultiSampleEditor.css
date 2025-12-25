@@ -338,3 +338,59 @@
   color: var(--zenith-text-tertiary);
   font-style: italic;
 }
+
+/* Velocity Curve */
+.multisample-editor__velocity-curve {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.multisample-editor__velocity-curve-label {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+  color: #e0e0e0;
+}
+
+.multisample-editor__velocity-curve-label span {
+  min-width: 110px;
+}
+
+.multisample-editor__velocity-curve-select {
+  flex: 1;
+  padding: 6px 10px;
+  background: #2a2a2a;
+  border: 1px solid #444;
+  border-radius: 4px;
+  color: #e0e0e0;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.multisample-editor__velocity-curve-select:hover {
+  border-color: #6B8EBF;
+  background: #333;
+}
+
+.multisample-editor__velocity-curve-select:focus {
+  outline: none;
+  border-color: #6B8EBF;
+  box-shadow: 0 0 0 2px rgba(107, 142, 191, 0.2);
+}
+
+.multisample-editor__velocity-curve-info {
+  padding: 10px;
+  background: rgba(107, 142, 191, 0.1);
+  border-left: 3px solid #6B8EBF;
+  border-radius: 4px;
+}
+
+.multisample-editor__velocity-curve-info p {
+  margin: 0;
+  font-size: 12px;
+  color: #b0b0b0;
+  line-height: 1.5;
+}

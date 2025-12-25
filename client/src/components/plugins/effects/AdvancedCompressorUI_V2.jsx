@@ -1,20 +1,20 @@
 /**
- * ADVANCED COMPRESSOR UI V2.0
+ * ADVANCED COMPRESSOR UI V2.0 - REDESIGNED VISUAL FEEDBACK
  *
- * Professional compressor with redesigned visual feedback
- * Inspired by: FabFilter Pro-C, Waves SSL Comp, Universal Audio
+ * Professional compressor with clean, focused visual feedback
+ * Inspired by: FabFilter Pro-C 2, Waves SSL Comp, Universal Audio
  *
  * Visual Design Philosophy:
- * - Large, prominent GR meter (oscilloscope style)
- * - Clean transfer curve (compact but clear)
- * - Real-time envelope visualization
- * - Frequency-aware compression feedback
+ * - Large, prominent GR meter (oscilloscope style) - MAIN FOCUS
+ * - Clean transfer curve (compact, side panel)
+ * - Real-time sidechain visualization
+ * - Minimal, focused information display
  */
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import PluginContainerV2 from '../container/PluginContainerV2';
 import { TwoPanelLayout } from '../layout/TwoPanelLayout';
-import { Knob, ExpandablePanel, Checkbox, Select } from '@/components/controls';
+import { Knob, ExpandablePanel, Checkbox, Select, ModeSelector } from '@/components/controls';
 import { getCategoryColors } from '../PluginDesignSystem';
 import { useParameterBatcher } from '@/services/ParameterBatcher';
 import { useRenderer } from '@/services/CanvasRenderManager';
@@ -22,7 +22,7 @@ import { useAudioPlugin, useGhostValue } from '@/hooks/useAudioPlugin';
 import { useMixerStore } from '@/store/useMixerStore';
 
 // ============================================================================
-// COMPRESSION VISUALIZER - Redesigned from scratch
+// COMPRESSION VISUALIZER - Redesigned: Clean & Focused
 // ============================================================================
 
 const CompressionVisualizer = ({ 
@@ -36,16 +36,14 @@ const CompressionVisualizer = ({
   gainReduction = 0, 
   sidechainLevel = null, 
   scEnable = 0,
+  compressorModel = 0,
+  mix = 100,
   grHistoryRef,
-  bandDataRef,
+  sidechainHistoryRef,
   categoryColors
 }) => {
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
-  const signalBufferRef = useRef([]);
-  const envelopeBufferRef = useRef([]); // For attack/release visualization
-  const thresholdCrossingRef = useRef([]); // Track threshold crossings
-  const maxBufferSize = 200;
 
   // Helper to convert hex to rgba with opacity
   const hexToRgba = useCallback((hex, opacity) => {
@@ -55,7 +53,7 @@ const CompressionVisualizer = ({
     return `rgba(${r}, ${g}, ${b}, ${opacity})`;
   }, []);
 
-  const { isPlaying, getTimeDomainData, getFrequencyData, metricsDb } = useAudioPlugin(trackId, effectId, {
+  const { isPlaying, getTimeDomainData, metricsDb } = useAudioPlugin(trackId, effectId, {
     fftSize: 2048,
     updateMetrics: true,
     rmsSmoothing: 0.3,
@@ -78,96 +76,225 @@ const CompressionVisualizer = ({
     ctx.scale(dpr, dpr);
 
     // ============================================================================
-    // LAYOUT: Reference design inspired by professional compressors
-    // Top 40%: Transfer Curve (larger, more detailed)
-    // Middle 40%: GR Meter (oscilloscope-style) - THE MAIN FOCUS
-    // Bottom 20%: Attack/Release Envelope + Band Info
+    // LAYOUT: Clean, focused design
+    // Left 70%: GR Meter (oscilloscope style) - MAIN FOCUS
+    // Right 30%: Transfer Curve (compact)
+    // Bottom: Sidechain visualization (if enabled)
     // ============================================================================
     
-    const transferHeight = displayHeight * 0.40;
-    const grMeterHeight = displayHeight * 0.40;
-    const envelopeHeight = displayHeight * 0.20;
-    const transferTop = 0;
-    const grMeterTop = transferHeight;
-    const envelopeTop = transferHeight + grMeterHeight;
+    const grMeterWidth = displayWidth * 0.70;
+    const transferWidth = displayWidth * 0.30;
+    const sidechainHeight = scEnable ? displayHeight * 0.20 : 0;
+    const grMeterHeight = displayHeight - sidechainHeight;
+    const transferHeight = displayHeight - sidechainHeight;
 
     // Background
     ctx.fillStyle = 'rgba(5, 5, 10, 0.98)';
     ctx.fillRect(0, 0, displayWidth, displayHeight);
 
     // ============================================================================
-    // SECTION 1: TRANSFER CURVE (Top 40%) - Enhanced visibility
+    // SECTION 1: GAIN REDUCTION METER (Left 70%) - MAIN FOCUS
     // ============================================================================
     
-    const curvePadding = 40;
-    const curveWidth = displayWidth - curvePadding * 2;
-    const curveHeight = transferHeight - 30;
-    const curveTop = transferTop + 15;
+    const meterPadding = 20;
+    const meterInnerWidth = grMeterWidth - meterPadding * 2;
+    const meterInnerHeight = grMeterHeight - 60;
+    const meterTop = 40;
+    const meterLeft = meterPadding;
+
+    // Background (dark, oscilloscope style)
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.9)';
+    ctx.fillRect(meterLeft, meterTop, meterInnerWidth, meterInnerHeight);
     
-    // Background for transfer curve (darker for contrast)
-    ctx.fillStyle = 'rgba(8, 8, 12, 0.95)';
-    ctx.fillRect(curvePadding, curveTop, curveWidth, curveHeight);
-    
-    // Border for definition (using categoryColors)
-    ctx.strokeStyle = hexToRgba(categoryColors.primary, 0.15);
-    ctx.lineWidth = 1;
-    ctx.strokeRect(curvePadding, curveTop, curveWidth, curveHeight);
-    
-    // Enhanced grid (more visible)
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
-    ctx.lineWidth = 1;
-    // Vertical grid (dB markers)
-    for (let i = 0; i <= 6; i++) {
-      const x = curvePadding + (i / 6) * curveWidth;
+    // Border
+    ctx.strokeStyle = hexToRgba(categoryColors.primary, 0.3);
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(meterLeft, meterTop, meterInnerWidth, meterInnerHeight);
+
+    // Grid lines (horizontal, subtle)
+    ctx.strokeStyle = hexToRgba(categoryColors.primary, 0.1);
+        ctx.lineWidth = 1;
+    const grRanges = [0, 3, 6, 9, 12, 15, 18, 20];
+    grRanges.forEach(grValue => {
+      const y = meterTop + meterInnerHeight - (grValue / 20) * meterInnerHeight;
       ctx.beginPath();
-      ctx.moveTo(x, curveTop);
-      ctx.lineTo(x, curveTop + curveHeight);
+      ctx.moveTo(meterLeft, y);
+      ctx.lineTo(meterLeft + meterInnerWidth, y);
       ctx.stroke();
-    }
-    // Horizontal grid
-    for (let i = 0; i <= 6; i++) {
-      const y = curveTop + (i / 6) * curveHeight;
-      ctx.beginPath();
-      ctx.moveTo(curvePadding, y);
-      ctx.lineTo(curvePadding + curveWidth, y);
-      ctx.stroke();
-    }
-    
-    // dB markers on axes
-    ctx.font = '9px monospace';
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
-    ctx.textAlign = 'center';
-    const dbValues = [-60, -50, -40, -30, -20, -10, 0];
-    dbValues.forEach((db, i) => {
-      const x = curvePadding + (i / 6) * curveWidth;
-      ctx.fillText(`${db}`, x, curveTop + curveHeight + 12);
-    });
-    
-    ctx.textAlign = 'right';
-    dbValues.forEach((db, i) => {
-      const y = curveTop + curveHeight - (i / 6) * curveHeight;
-      ctx.fillText(`${db}`, curvePadding - 6, y + 3);
     });
 
+    // Zero line (baseline)
+    const zeroY = meterTop + meterInnerHeight;
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(meterLeft, zeroY);
+    ctx.lineTo(meterLeft + meterInnerWidth, zeroY);
+    ctx.stroke();
+
+    // GR scale labels (left side)
+    ctx.font = '10px monospace';
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+    ctx.textAlign = 'right';
+    grRanges.forEach(grValue => {
+      const y = meterTop + meterInnerHeight - (grValue / 20) * meterInnerHeight;
+      ctx.fillText(`-${grValue}`, meterLeft - 8, y + 3);
+    });
+
+    // Draw GR history (oscilloscope style) - THE MAIN FEATURE
+    if (isPlaying && grHistoryRef && grHistoryRef.current && grHistoryRef.current.length > 1) {
+      const grHistory = grHistoryRef.current;
+      const maxGR = 20;
+      const timeWindow = 4000; // 4 seconds
+      const now = performance.now();
+      
+      // Filter recent points
+      const recentPoints = grHistory
+        .map(point => ({
+          ...point,
+          age: now - point.timestamp
+        }))
+        .filter(point => point.age <= timeWindow && point.age >= 0)
+        .sort((a, b) => a.timestamp - b.timestamp);
+      
+      if (recentPoints.length > 1) {
+        // Draw GR waveform (oscilloscope style)
+        ctx.strokeStyle = hexToRgba(categoryColors.primary, 0.95);
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        
+        for (let i = 0; i < recentPoints.length; i++) {
+          const point = recentPoints[i];
+          const x = meterLeft + meterInnerWidth - ((point.age / timeWindow) * meterInnerWidth);
+          const grNormalized = Math.min(point.gr / maxGR, 1);
+          const y = meterTop + meterInnerHeight - (grNormalized * meterInnerHeight);
+          
+          if (i === 0) {
+            ctx.moveTo(x, y);
+          } else {
+            ctx.lineTo(x, y);
+          }
+        }
+        ctx.stroke();
+
+        // Fill under curve with gradient
+        if (recentPoints.length > 0) {
+          const gradient = ctx.createLinearGradient(0, meterTop, 0, meterTop + meterInnerHeight);
+          gradient.addColorStop(0, hexToRgba(categoryColors.primary, 0.25));
+          gradient.addColorStop(0.5, hexToRgba(categoryColors.primary, 0.15));
+          gradient.addColorStop(1, hexToRgba(categoryColors.primary, 0.05));
+          
+          ctx.fillStyle = gradient;
+          ctx.beginPath();
+          ctx.moveTo(meterLeft + meterInnerWidth, zeroY);
+          
+          for (let i = recentPoints.length - 1; i >= 0; i--) {
+            const point = recentPoints[i];
+            const x = meterLeft + meterInnerWidth - ((point.age / timeWindow) * meterInnerWidth);
+            const grNormalized = Math.min(point.gr / maxGR, 1);
+            const y = meterTop + meterInnerHeight - (grNormalized * meterInnerHeight);
+            ctx.lineTo(x, y);
+          }
+          
+          if (recentPoints.length > 0) {
+            const firstX = meterLeft + meterInnerWidth - ((recentPoints[0].age / timeWindow) * meterInnerWidth);
+            ctx.lineTo(firstX, zeroY);
+          }
+          ctx.closePath();
+          ctx.fill();
+        }
+
+        // Current GR indicator (right edge)
+        if (recentPoints.length > 0) {
+          const latest = recentPoints[recentPoints.length - 1];
+          const grNormalized = Math.min(latest.gr / maxGR, 1);
+          const currentY = meterTop + meterInnerHeight - (grNormalized * meterInnerHeight);
+          
+          // Vertical line (color-coded)
+          const grColor = latest.gr > 12 
+            ? '#ef4444' // Red (heavy compression)
+            : latest.gr > 6 
+            ? '#f59e0b' // Amber (moderate compression)
+            : categoryColors.primary; // Category primary (gentle)
+          ctx.strokeStyle = grColor;
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.moveTo(meterLeft + meterInnerWidth - 2, meterTop);
+          ctx.lineTo(meterLeft + meterInnerWidth - 2, currentY);
+          ctx.stroke();
+
+          // Current GR value (large, prominent)
+          ctx.font = 'bold 24px monospace';
+          ctx.textAlign = 'left';
+          ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+          ctx.fillRect(meterLeft + meterInnerWidth + 8, currentY - 18, 80, 28);
+          ctx.fillStyle = grColor;
+          ctx.fillText(`${latest.gr.toFixed(1)} dB`, meterLeft + meterInnerWidth + 12, currentY + 6);
+        }
+      }
+    } else if (!isPlaying) {
+      // Idle state
+      ctx.font = '14px system-ui';
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+      ctx.textAlign = 'center';
+      ctx.fillText('▶ Play to see gain reduction', meterLeft + meterInnerWidth / 2, meterTop + meterInnerHeight / 2);
+    }
+
+    // Title
+    ctx.font = 'bold 11px system-ui';
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+    ctx.textAlign = 'left';
+    ctx.fillText('GAIN REDUCTION', meterLeft, meterTop - 8);
+
+          // ============================================================================
+    // SECTION 2: TRANSFER CURVE (Right 30%) - Compact
+          // ============================================================================
+          
+    const curveLeft = grMeterWidth + 10;
+    const curvePadding = 15;
+    const curveWidth = transferWidth - curvePadding * 2;
+    const curveHeight = transferHeight - 50;
+    const curveTop = 40;
+    
+    // Background
+    ctx.fillStyle = 'rgba(8, 8, 12, 0.95)';
+    ctx.fillRect(curveLeft, curveTop, transferWidth - 20, curveHeight);
+    
+    // Border
+    ctx.strokeStyle = hexToRgba(categoryColors.primary, 0.2);
+                ctx.lineWidth = 1;
+    ctx.strokeRect(curveLeft, curveTop, transferWidth - 20, curveHeight);
+
     // Helper functions
-    const dbToX = (db) => curvePadding + ((db + 60) / 60) * curveWidth;
+    const dbToX = (db) => curveLeft + curvePadding + ((db + 60) / 60) * curveWidth;
     const dbToY = (db) => curveTop + curveHeight - ((db + 60) / 60) * curveHeight;
 
     // Unity line (diagonal, 1:1 reference)
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
-    ctx.lineWidth = 1.5;
-    ctx.setLineDash([3, 3]);
-    ctx.beginPath();
-    ctx.moveTo(curvePadding, curveTop + curveHeight);
-    ctx.lineTo(curvePadding + curveWidth, curveTop);
-    ctx.stroke();
-    ctx.setLineDash([]);
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([2, 2]);
+                ctx.beginPath();
+    ctx.moveTo(curveLeft + curvePadding, curveTop + curveHeight);
+    ctx.lineTo(curveLeft + curvePadding + curveWidth, curveTop);
+                ctx.stroke();
+                ctx.setLineDash([]);
+                
+    // Get model color
+    const modelColors = [
+      categoryColors.primary, // Clean/VCA
+      categoryColors.secondary, // Opto
+      '#f59e0b' // FET
+    ];
+    const currentModelColor = modelColors[compressorModel] || categoryColors.primary;
+    
+    // Apply model-specific adjustments
+    let effectiveKnee = knee;
+    if (compressorModel === 1) effectiveKnee = knee * 1.2; // Opto: softer
+    else if (compressorModel === 2) effectiveKnee = knee * 0.5; // FET: harder
 
-    // Transfer curve (enhanced, more prominent)
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.95)';
-    ctx.lineWidth = 2.5;
-    ctx.shadowBlur = 4;
-    ctx.shadowColor = 'rgba(255, 255, 255, 0.3)';
+    // Transfer curve
+    ctx.strokeStyle = hexToRgba(currentModelColor, 0.9);
+    ctx.lineWidth = 2;
     ctx.beginPath();
 
     const limiterCeiling = -0.3;
@@ -175,11 +302,11 @@ const CompressionVisualizer = ({
       const inputOverThreshold = inputDb - threshold;
       let outputDb = inputDb;
 
-      if (inputOverThreshold > knee / 2) {
+      if (inputOverThreshold > effectiveKnee / 2) {
         outputDb = threshold + inputOverThreshold / ratio;
-      } else if (inputOverThreshold > -knee / 2) {
-        const x = inputOverThreshold + knee / 2;
-        outputDb = inputDb - ((ratio - 1) * Math.pow(x, 2) / (2 * knee * ratio));
+      } else if (inputOverThreshold > -effectiveKnee / 2) {
+        const x = inputOverThreshold + effectiveKnee / 2;
+        outputDb = inputDb - ((ratio - 1) * Math.pow(x, 2) / (2 * effectiveKnee * ratio));
       }
 
       if (outputDb > limiterCeiling) {
@@ -191,68 +318,33 @@ const CompressionVisualizer = ({
       if (inputDb === -60) ctx.moveTo(x, y);
       else ctx.lineTo(x, y);
     }
-    ctx.shadowBlur = 0;
     ctx.stroke();
 
-    // Threshold line (more visible, like reference image)
+    // Threshold line
     const thresholdY = dbToY(threshold);
-    // Use categoryColors for threshold line
-    const thresholdColor = categoryColors.primary;
-    ctx.strokeStyle = `${thresholdColor}B3`; // 70% opacity
-    ctx.lineWidth = 2;
-    ctx.setLineDash([6, 4]);
-    ctx.beginPath();
-    ctx.moveTo(curvePadding, thresholdY);
-    ctx.lineTo(curvePadding + curveWidth, thresholdY);
-    ctx.stroke();
-    ctx.setLineDash([]);
-    
-    // Threshold label (prominent) with compression info
-    ctx.font = 'bold 11px monospace';
-    ctx.fillStyle = `${thresholdColor}40`; // 25% opacity
-    ctx.fillRect(curvePadding + 8, thresholdY - 18, 140, 16);
-    ctx.fillStyle = thresholdColor;
-    ctx.textAlign = 'left';
-    ctx.fillText(`Threshold: ${threshold.toFixed(1)} dB`, curvePadding + 12, thresholdY - 5);
-    
-    // Ratio indicator (shows compression intensity)
-    const ratioText = ratio === Infinity ? '∞:1' : `${ratio.toFixed(1)}:1`;
-    ctx.font = '10px monospace';
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-    ctx.fillText(`Ratio: ${ratioText}`, curvePadding + curveWidth - 100, thresholdY - 5);
-    
-    // Compression zone indicator (area where compression occurs)
-    const compressionZoneTop = dbToY(threshold + 20); // +20dB above threshold
-    ctx.fillStyle = 'rgba(239, 68, 68, 0.08)';
-    ctx.fillRect(curvePadding, thresholdY, curveWidth, compressionZoneTop - thresholdY);
-    
-    // Ratio line visualization (shows compression curve slope)
-    const ratioLineStartX = dbToX(threshold);
-    const ratioLineStartY = thresholdY;
-    const ratioLineEndX = dbToX(0); // At 0dB input
-    const ratioLineEndY = dbToY(threshold + (0 - threshold) / ratio); // Output at 0dB input
-    
-    ctx.strokeStyle = 'rgba(239, 68, 68, 0.3)';
+    ctx.strokeStyle = hexToRgba(categoryColors.primary, 0.6);
     ctx.lineWidth = 1.5;
-    ctx.setLineDash([3, 3]);
-    ctx.beginPath();
-    ctx.moveTo(ratioLineStartX, ratioLineStartY);
-    ctx.lineTo(ratioLineEndX, ratioLineEndY);
-    ctx.stroke();
-    ctx.setLineDash([]);
+    ctx.setLineDash([4, 3]);
+                ctx.beginPath();
+    ctx.moveTo(curveLeft + curvePadding, thresholdY);
+    ctx.lineTo(curveLeft + curvePadding + curveWidth, thresholdY);
+                ctx.stroke();
+                ctx.setLineDash([]);
+                
+    // Threshold label
+                  ctx.font = '9px monospace';
+    ctx.fillStyle = categoryColors.primary;
+    ctx.textAlign = 'left';
+    ctx.fillText(`T: ${threshold.toFixed(1)}dB`, curveLeft + curvePadding + 4, thresholdY - 4);
     
-    // Ratio label on the line
-    const ratioMidX = (ratioLineStartX + ratioLineEndX) / 2;
-    const ratioMidY = (ratioLineStartY + ratioLineEndY) / 2;
+    // Ratio label
+    const ratioText = ratio === Infinity ? '∞:1' : `${ratio.toFixed(1)}:1`;
     ctx.font = '9px monospace';
-    ctx.fillStyle = 'rgba(239, 68, 68, 0.7)';
-    ctx.textAlign = 'center';
-    ctx.fillText(`${ratioText}`, ratioMidX, ratioMidY - 5);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+                  ctx.textAlign = 'right';
+    ctx.fillText(`R: ${ratioText}`, curveLeft + transferWidth - 24, curveTop + 12);
 
-    // ============================================================================
-    // REAL-TIME SIGNAL VISUALIZATION - Connected to Parameters
-    // ============================================================================
-    
+    // Real-time signal point
     if (isPlaying) {
       const timeData = getTimeDomainData();
       if (timeData && timeData.length > 0) {
@@ -267,11 +359,11 @@ const CompressionVisualizer = ({
         const inputOverThreshold = clampedInputDb - threshold;
         let outputDb = clampedInputDb;
         
-        if (inputOverThreshold > knee / 2) {
+        if (inputOverThreshold > effectiveKnee / 2) {
           outputDb = threshold + inputOverThreshold / ratio;
-        } else if (inputOverThreshold > -knee / 2) {
-          const x = inputOverThreshold + knee / 2;
-          outputDb = clampedInputDb - ((ratio - 1) * Math.pow(x, 2) / (2 * knee * ratio));
+        } else if (inputOverThreshold > -effectiveKnee / 2) {
+          const x = inputOverThreshold + effectiveKnee / 2;
+          outputDb = clampedInputDb - ((ratio - 1) * Math.pow(x, 2) / (2 * effectiveKnee * ratio));
         }
 
         if (outputDb > limiterCeiling) {
@@ -282,558 +374,124 @@ const CompressionVisualizer = ({
         const inputY = dbToY(clampedInputDb);
         const outputY = dbToY(outputDb);
         const isCompressing = outputDb < clampedInputDb - 0.5;
-        const isAboveThreshold = clampedInputDb > threshold;
 
-        // Track threshold crossings
-        const now = performance.now();
-        const previousPoint = signalBufferRef.current[signalBufferRef.current.length - 1];
-        if (previousPoint) {
-          const wasAboveThreshold = previousPoint.inputDb > threshold;
-          if (isAboveThreshold !== wasAboveThreshold) {
-            // Threshold crossing detected
-            thresholdCrossingRef.current.push({
-              timestamp: now,
-              crossingUp: isAboveThreshold
-            });
-          }
-        }
-
-        // Store signal point
-        signalBufferRef.current.push({
-          inputDb: clampedInputDb,
-          outputDb,
-          timestamp: now,
-          isCompressing,
-          isAboveThreshold,
-          gainReduction: clampedInputDb - outputDb
-        });
-
-        // Trim buffers
-        signalBufferRef.current = signalBufferRef.current.filter(point => now - point.timestamp < 1000);
-        thresholdCrossingRef.current = thresholdCrossingRef.current.filter(cross => now - cross.timestamp < 2000);
-
-        // ============================================================================
-        // VISUALIZATION 1: Threshold Crossing Indicator
-        // ============================================================================
-        if (isAboveThreshold) {
-          // Highlight threshold area when signal is above (using categoryColors)
-          ctx.fillStyle = hexToRgba(categoryColors.primary, 0.15);
-          ctx.fillRect(curvePadding, thresholdY - 5, curveWidth, 10);
-          
-          // Pulse effect when crossing
-          const recentCrossing = thresholdCrossingRef.current[thresholdCrossingRef.current.length - 1];
-          if (recentCrossing && now - recentCrossing.timestamp < 200) {
-            const pulse = Math.sin(((now - recentCrossing.timestamp) / 200) * Math.PI);
-            ctx.strokeStyle = hexToRgba(categoryColors.primary, 0.7 + pulse * 0.3);
-            ctx.lineWidth = 2.5;
-            ctx.setLineDash([8, 4]);
-            ctx.beginPath();
-            ctx.moveTo(curvePadding, thresholdY);
-            ctx.lineTo(curvePadding + curveWidth, thresholdY);
-            ctx.stroke();
-            ctx.setLineDash([]);
-          }
-        }
-
-        // ============================================================================
-        // VISUALIZATION 2: Current Signal Point with Compression Info
-        // ============================================================================
-        
-        // Vertical line showing input level position (using categoryColors)
-        ctx.strokeStyle = isAboveThreshold ? hexToRgba(categoryColors.primary, 0.5) : 'rgba(255, 255, 255, 0.15)';
-        ctx.lineWidth = 1;
-        ctx.setLineDash([4, 3]);
+        // Current input point
+        ctx.shadowBlur = 6;
+        ctx.shadowColor = isCompressing ? 'rgba(239, 68, 68, 0.8)' : 'rgba(0, 255, 255, 0.8)';
+        ctx.fillStyle = isCompressing ? '#ef4444' : '#00ffff';
         ctx.beginPath();
-        ctx.moveTo(inputX, curveTop);
-        ctx.lineTo(inputX, curveTop + curveHeight);
-        ctx.stroke();
-        ctx.setLineDash([]);
-
-        // Current input point (always visible)
-        const pointSize = isCompressing ? 5 : 4;
-        ctx.shadowBlur = 8;
-        ctx.shadowColor = isCompressing ? 'rgba(239, 68, 68, 0.9)' : 'rgba(0, 255, 255, 0.9)';
-        ctx.fillStyle = isCompressing ? 'rgba(239, 68, 68, 1)' : 'rgba(0, 255, 255, 1)';
-        ctx.beginPath();
-        ctx.arc(inputX, inputY, pointSize, 0, Math.PI * 2);
+        ctx.arc(inputX, inputY, 3, 0, Math.PI * 2);
         ctx.fill();
         ctx.shadowBlur = 0;
 
-        // Compression visualization
+        // Compression arrow
         if (isCompressing) {
-          // Compression arrow (input → output)
-          ctx.strokeStyle = 'rgba(239, 68, 68, 0.9)';
-          ctx.lineWidth = 3;
+          ctx.strokeStyle = '#ef4444';
+          ctx.lineWidth = 2;
           ctx.beginPath();
           ctx.moveTo(inputX, inputY);
           ctx.lineTo(inputX, outputY);
           ctx.stroke();
-          
-          // Arrow head
-          ctx.fillStyle = 'rgba(239, 68, 68, 1)';
-          ctx.beginPath();
-          ctx.moveTo(inputX, outputY);
-          ctx.lineTo(inputX - 5, outputY - 4);
-          ctx.lineTo(inputX + 5, outputY - 4);
-          ctx.closePath();
-          ctx.fill();
-          
-          // Output point
-          ctx.shadowBlur = 6;
-          ctx.shadowColor = 'rgba(239, 68, 68, 0.8)';
-          ctx.fillStyle = 'rgba(239, 68, 68, 1)';
-          ctx.beginPath();
-          ctx.arc(inputX, outputY, 4, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.shadowBlur = 0;
-
-          // Compression amount label
-          const grAmount = (clampedInputDb - outputDb).toFixed(1);
-          ctx.font = 'bold 10px monospace';
-          ctx.fillStyle = 'rgba(239, 68, 68, 1)';
-          ctx.textAlign = 'left';
-          ctx.fillText(`-${grAmount}dB`, inputX + 8, outputY - 2);
         }
-
-        // Input level label (using categoryColors)
-        ctx.font = '10px monospace';
-        ctx.fillStyle = isAboveThreshold ? categoryColors.primary : 'rgba(255, 255, 255, 0.8)';
-        ctx.textAlign = 'left';
-        ctx.fillText(`${clampedInputDb.toFixed(1)}dB`, inputX + 8, inputY + 4);
-
-        // ============================================================================
-        // VISUALIZATION 3: Attack/Release Envelope on Transfer Curve
-        // ============================================================================
-        
-        // Show compression envelope (how attack/release affects the curve)
-        if (isCompressing && signalBufferRef.current.length > 5) {
-          const envelopePoints = signalBufferRef.current.slice(-20); // Last 20 points
-          
-          // Draw envelope curve showing attack/release character (using categoryColors)
-          ctx.strokeStyle = hexToRgba(categoryColors.secondary, 0.4);
-          ctx.lineWidth = 1.5;
-          ctx.setLineDash([2, 2]);
-          ctx.beginPath();
-          
-          envelopePoints.forEach((point, idx) => {
-            const age = now - point.timestamp;
-            const envelopeFactor = Math.exp(-age / (attack * 1000)); // Attack decay
-            const releaseFactor = point.isCompressing ? 1 : Math.exp(-age / (release * 1000)); // Release decay
-            
-            const envelopeX = dbToX(point.inputDb);
-            const envelopeOutput = point.outputDb + (point.inputDb - point.outputDb) * envelopeFactor * releaseFactor;
-            const envelopeY = dbToY(envelopeOutput);
-            
-            if (idx === 0) ctx.moveTo(envelopeX, envelopeY);
-            else ctx.lineTo(envelopeX, envelopeY);
-          });
-          ctx.stroke();
-          ctx.setLineDash([]);
-        }
-      }
-    }
-
-    // Axis labels (larger, more visible)
-    ctx.font = 'bold 10px system-ui';
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
-    ctx.textAlign = 'center';
-    ctx.fillText('Input Level (dB)', curvePadding + curveWidth / 2, transferTop + transferHeight - 6);
-    ctx.save();
-    ctx.translate(10, transferTop + transferHeight / 2);
-    ctx.rotate(-Math.PI / 2);
-    ctx.fillText('Output Level (dB)', 0, 0);
-    ctx.restore();
-
-    // ============================================================================
-    // SECTION 2: GAIN REDUCTION METER (Middle 40%) - MAIN FOCUS
-    // ============================================================================
-    
-    const meterPadding = 25;
-    const meterWidth = displayWidth - meterPadding * 2;
-    const meterInnerHeight = grMeterHeight - 50;
-    const meterTop = grMeterTop + 25;
-    
-    // Background (darker for oscilloscope effect)
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
-    ctx.fillRect(meterPadding, meterTop, meterWidth, meterInnerHeight);
-    
-    // Border (more defined, using categoryColors)
-    ctx.strokeStyle = hexToRgba(categoryColors.primary, 0.4);
-    ctx.lineWidth = 1.5;
-    ctx.strokeRect(meterPadding, meterTop, meterWidth, meterInnerHeight);
-
-    // Grid lines (horizontal, more visible, using categoryColors)
-    ctx.strokeStyle = hexToRgba(categoryColors.primary, 0.15);
-    ctx.lineWidth = 1;
-    const grRanges = [0, 2, 4, 6, 8, 10, 12, 15, 18, 20];
-    grRanges.forEach(grValue => {
-      const y = meterTop + meterInnerHeight - (grValue / 20) * meterInnerHeight;
-      ctx.beginPath();
-      ctx.moveTo(meterPadding, y);
-      ctx.lineTo(meterPadding + meterWidth, y);
-      ctx.stroke();
-    });
-
-    // Zero line (very prominent, baseline)
-    const zeroY = meterTop + meterInnerHeight;
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(meterPadding, zeroY);
-    ctx.lineTo(meterPadding + meterWidth, zeroY);
-    ctx.stroke();
-
-    // GR scale labels (left side, larger)
-    ctx.font = '11px monospace';
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
-    ctx.textAlign = 'right';
-    grRanges.forEach(grValue => {
-      const y = meterTop + meterInnerHeight - (grValue / 20) * meterInnerHeight;
-      ctx.fillText(`-${grValue}`, meterPadding - 10, y + 4);
-    });
-
-    // Draw GR history (oscilloscope style) - THE MAIN FEATURE
-    if (isPlaying && grHistoryRef && grHistoryRef.current && grHistoryRef.current.length > 1) {
-      const grHistory = grHistoryRef.current;
-      const maxGR = 20;
-      const timeWindow = 3000; // 3 seconds
-      const now = performance.now();
-      
-      // Filter recent points
-      const recentPoints = grHistory
-        .map(point => ({
-          ...point,
-          age: now - point.timestamp
-        }))
-        .filter(point => point.age <= timeWindow && point.age >= 0)
-        .sort((a, b) => a.timestamp - b.timestamp);
-      
-      if (recentPoints.length > 1) {
-        // Draw GR waveform (oscilloscope style, using categoryColors)
-        ctx.strokeStyle = hexToRgba(categoryColors.primary, 0.95);
-        ctx.lineWidth = 2.5;
-        ctx.beginPath();
-        
-        for (let i = 0; i < recentPoints.length; i++) {
-          const point = recentPoints[i];
-          const x = meterPadding + meterWidth - ((point.age / timeWindow) * meterWidth);
-          const grNormalized = Math.min(point.gr / maxGR, 1);
-          const y = meterTop + meterInnerHeight - (grNormalized * meterInnerHeight * 0.95);
-          
-          if (i === 0) {
-            ctx.moveTo(x, y);
-          } else {
-            ctx.lineTo(x, y);
-          }
-        }
-        ctx.stroke();
-
-        // Fill under curve with gradient (enhanced visibility, using categoryColors)
-        if (recentPoints.length > 0) {
-          const gradient = ctx.createLinearGradient(0, meterTop, 0, meterTop + meterInnerHeight);
-          gradient.addColorStop(0, hexToRgba(categoryColors.primary, 0.3));
-          gradient.addColorStop(0.5, hexToRgba(categoryColors.primary, 0.2));
-          gradient.addColorStop(1, hexToRgba(categoryColors.primary, 0.05));
-          
-          ctx.fillStyle = gradient;
-          ctx.beginPath();
-          ctx.moveTo(meterPadding + meterWidth, zeroY);
-          
-          for (let i = recentPoints.length - 1; i >= 0; i--) {
-            const point = recentPoints[i];
-            const x = meterPadding + meterWidth - ((point.age / timeWindow) * meterWidth);
-            const grNormalized = Math.min(point.gr / maxGR, 1);
-            const y = meterTop + meterInnerHeight - (grNormalized * meterInnerHeight * 0.95);
-            ctx.lineTo(x, y);
-          }
-          
-          if (recentPoints.length > 0) {
-            const firstX = meterPadding + meterWidth - ((recentPoints[0].age / timeWindow) * meterWidth);
-            ctx.lineTo(firstX, zeroY);
-          }
-          ctx.closePath();
-          ctx.fill();
-        }
-
-        // Current GR indicator (right edge, very prominent)
-        if (recentPoints.length > 0) {
-          const latest = recentPoints[recentPoints.length - 1];
-          const grNormalized = Math.min(latest.gr / maxGR, 1);
-          const currentY = meterTop + meterInnerHeight - (grNormalized * meterInnerHeight * 0.95);
-          
-          // Vertical line (thicker, more visible, color-coded)
-          const grColor = latest.gr > 12 
-            ? '#ef4444' // Red (heavy compression)
-            : latest.gr > 6 
-            ? '#f59e0b' // Amber (moderate compression)
-            : categoryColors.primary; // Category primary (gentle)
-          ctx.strokeStyle = grColor;
-          ctx.lineWidth = 4;
-          ctx.beginPath();
-          ctx.moveTo(meterPadding + meterWidth - 3, meterTop);
-          ctx.lineTo(meterPadding + meterWidth - 3, currentY);
-          ctx.stroke();
-
-          // Current GR value (large, very prominent, like reference)
-          ctx.font = 'bold 18px monospace';
-          ctx.textAlign = 'left';
-          // Background for readability
-          ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
-          ctx.fillRect(meterPadding + meterWidth + 6, currentY - 14, 95, 22);
-          ctx.fillStyle = grColor;
-          ctx.fillText(`${latest.gr.toFixed(1)} dB`, meterPadding + meterWidth + 10, currentY + 6);
-
-          // ============================================================================
-          // VISUALIZATION 4: Attack/Release Character on GR Meter
-          // ============================================================================
-          
-          // Show attack/release timing on GR waveform
-          if (recentPoints.length > 3) {
-            // Find the latest peak (for attack visualization)
-            let peakGR = 0;
-            let peakAge = 0;
-            for (let i = recentPoints.length - 1; i >= 0; i--) {
-              if (recentPoints[i].gr > peakGR) {
-                peakGR = recentPoints[i].gr;
-                peakAge = recentPoints[i].age;
-              }
-            }
-
-            if (peakGR > 1) {
-              const peakX = meterPadding + meterWidth - ((peakAge / timeWindow) * meterWidth);
-              const peakY = meterTop + meterInnerHeight - ((peakGR / maxGR) * meterInnerHeight * 0.95);
-              
-              // Attack marker (using categoryColors secondary)
-              const attackDistance = (attack * 1000) / timeWindow * meterWidth;
-              if (attackDistance < meterWidth * 0.3) {
-                ctx.strokeStyle = hexToRgba(categoryColors.secondary, 0.6);
-                ctx.lineWidth = 1;
-                ctx.setLineDash([3, 2]);
-                ctx.beginPath();
-                ctx.moveTo(peakX, peakY);
-                ctx.lineTo(peakX + attackDistance, zeroY + (peakY - zeroY) * 0.5);
-                ctx.stroke();
-                ctx.setLineDash([]);
-                
-                // Attack label
-                ctx.font = '9px monospace';
-                ctx.fillStyle = categoryColors.secondary;
-                ctx.fillText(`A: ${(attack * 1000).toFixed(1)}ms`, peakX + 5, peakY - 5);
-              }
-
-              // Release marker (yellow - standard) - from current point
-              const releaseDistance = (release * 1000) / timeWindow * meterWidth;
-              if (releaseDistance < meterWidth * 0.3) {
-                const currentX = meterPadding + meterWidth - 2;
-                ctx.strokeStyle = hexToRgba('#facc15', 0.6); // Standard yellow
-                ctx.lineWidth = 1;
-                ctx.setLineDash([3, 2]);
-                ctx.beginPath();
-                ctx.moveTo(currentX, currentY);
-                ctx.lineTo(Math.max(meterPadding, currentX - releaseDistance), zeroY);
-                ctx.stroke();
-                ctx.setLineDash([]);
-                
-                // Release label (if space)
-                if (currentY > meterTop + 30) {
-                  ctx.font = '9px monospace';
-                  ctx.fillStyle = '#facc15'; // Standard yellow
-                  ctx.textAlign = 'right';
-                  ctx.fillText(`R: ${(release * 1000).toFixed(0)}ms`, currentX - 5, currentY - 5);
-                }
-              }
-            }
-          }
-        }
-      }
-    } else if (!isPlaying) {
-      // Idle state
-      ctx.font = '13px system-ui';
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.25)';
-      ctx.textAlign = 'center';
-      ctx.fillText('▶ Play to see gain reduction', meterPadding + meterWidth / 2, meterTop + meterInnerHeight / 2);
-    }
-
-    // Title (larger, more visible)
-    ctx.font = 'bold 12px system-ui';
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-    ctx.textAlign = 'left';
-    ctx.fillText('GAIN REDUCTION', meterPadding, grMeterTop + 15);
-
-    // ============================================================================
-    // SECTION 3: ATTACK/RELEASE ENVELOPE + BAND INFO (Bottom 20%)
-    // ============================================================================
-    
-    const envelopePadding = 15;
-    const envelopeWidth = displayWidth - envelopePadding * 2;
-    const envelopeInnerHeight = envelopeHeight - 25;
-    const envelopeVisualTop = envelopeTop + 12;
-    
-    // Background
-    ctx.fillStyle = 'rgba(8, 8, 12, 0.9)';
-    ctx.fillRect(envelopePadding, envelopeVisualTop, envelopeWidth, envelopeInnerHeight);
-    
-    // Border (using categoryColors)
-    ctx.strokeStyle = hexToRgba(categoryColors.primary, 0.2);
-    ctx.lineWidth = 1;
-    ctx.strokeRect(envelopePadding, envelopeVisualTop, envelopeWidth, envelopeInnerHeight);
-
-    // ============================================================================
-    // ATTACK/RELEASE VISUALIZATION - Connected to Signal Behavior
-    // ============================================================================
-    
-    const centerX = envelopePadding + envelopeWidth / 2;
-    const centerY = envelopeVisualTop + envelopeInnerHeight / 2;
-    
-    // Attack visualization (left side) - shows compression engagement speed
-    const attackMs = attack * 1000;
-    const maxAttackVisual = 50; // max 50ms for visualization
-    const attackVisualWidth = Math.min((attackMs / maxAttackVisual) * (envelopeWidth / 3 - 10), envelopeWidth / 3 - 10);
-    
-    // Attack bar with label (using categoryColors secondary)
-    ctx.fillStyle = hexToRgba(categoryColors.secondary, 0.7);
-    ctx.fillRect(envelopePadding + 20, centerY - 8, attackVisualWidth, 16);
-    ctx.strokeStyle = categoryColors.secondary;
-    ctx.lineWidth = 1.5;
-    ctx.strokeRect(envelopePadding + 20, centerY - 8, attackVisualWidth, 16);
-    
-    // Attack time indicator (if signal is actively compressing, pulse)
-    if (isPlaying && signalBufferRef.current.length > 0) {
-      const latestSignal = signalBufferRef.current[signalBufferRef.current.length - 1];
-      if (latestSignal && latestSignal.isCompressing) {
-        const pulsePhase = (performance.now() / (attackMs || 1)) % 1;
-        const pulseSize = 1 + Math.sin(pulsePhase * Math.PI * 2) * 0.2;
-        ctx.fillStyle = hexToRgba(categoryColors.secondary, 0.9 + Math.sin(pulsePhase * Math.PI * 2) * 0.1);
-        ctx.fillRect(envelopePadding + 20, centerY - 8, attackVisualWidth, 16);
-      }
-    }
-    
-    ctx.font = 'bold 11px monospace';
-    ctx.fillStyle = categoryColors.secondary;
-    ctx.textAlign = 'left';
-    ctx.fillText(`A: ${attackMs.toFixed(1)}ms`, envelopePadding + 25, centerY - 12);
-    
-    // Attack description
-    ctx.font = '9px system-ui';
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-    ctx.fillText(attackMs < 5 ? 'Fast' : attackMs < 20 ? 'Medium' : 'Slow', envelopePadding + 25, centerY + 18);
-    
-    // Release visualization (right side) - shows recovery speed
-    const releaseMs = release * 1000;
-    const maxReleaseVisual = 500; // max 500ms for visualization
-    const releaseVisualWidth = Math.min((releaseMs / maxReleaseVisual) * (envelopeWidth / 3 - 10), envelopeWidth / 3 - 10);
-    
-    // Release bar (standard yellow color)
-    ctx.fillStyle = hexToRgba('#facc15', 0.7);
-    ctx.fillRect(centerX + 10, centerY - 8, releaseVisualWidth, 16);
-    ctx.strokeStyle = '#facc15';
-    ctx.lineWidth = 1.5;
-    ctx.strokeRect(centerX + 10, centerY - 8, releaseVisualWidth, 16);
-    
-    // Release time indicator (if signal is releasing, pulse)
-    if (isPlaying && signalBufferRef.current.length > 0) {
-      const latestSignal = signalBufferRef.current[signalBufferRef.current.length - 1];
-      if (latestSignal && !latestSignal.isCompressing && latestSignal.inputDb < threshold) {
-        const pulsePhase = (performance.now() / (releaseMs || 1)) % 1;
-        ctx.fillStyle = hexToRgba('#facc15', 0.9 + Math.sin(pulsePhase * Math.PI * 2) * 0.1);
-        ctx.fillRect(centerX + 10, centerY - 8, releaseVisualWidth, 16);
-      }
-    }
-    
-    ctx.font = 'bold 11px monospace';
-    ctx.fillStyle = '#facc15';
-    ctx.textAlign = 'left';
-    ctx.fillText(`R: ${releaseMs.toFixed(0)}ms`, centerX + 15, centerY - 12);
-    
-    // Release description
-    ctx.font = '9px system-ui';
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-    ctx.fillText(releaseMs < 100 ? 'Fast' : releaseMs < 300 ? 'Medium' : 'Slow', centerX + 15, centerY + 18);
-    
-    // ============================================================================
-    // BAND-SPECIFIC COMPRESSION LEVELS - Shows frequency-dependent compression
-    // ============================================================================
-    
-    if (bandDataRef && bandDataRef.current) {
-      const bands = bandDataRef.current;
-      const bandWidth = envelopeWidth / 6;
-      const bandY = envelopeVisualTop + envelopeInnerHeight - 15;
-      const bandMaxHeight = 30;
-      
-      ['low', 'mid', 'high'].forEach((bandName, index) => {
-        const bandValue = bands[bandName] || 0;
-        const x = envelopePadding + envelopeWidth - (3 - index) * bandWidth - 30;
-        
-        // Band compression level (normalized to 0-20dB GR range)
-        const normalizedLevel = Math.min(Math.abs(bandValue) / 20, 1);
-        const barHeight = normalizedLevel * bandMaxHeight;
-        
-        // Band colors - using categoryColors with variation
-        const colors = [
-          hexToRgba(categoryColors.secondary, 0.9), // Low - secondary color
-          hexToRgba('#facc15', 0.9), // Mid - yellow (standard)
-          hexToRgba(categoryColors.accent, 0.9)  // High - accent color
-        ];
-        
-        // Bar background
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
-        ctx.fillRect(x, bandY - bandMaxHeight, 18, bandMaxHeight);
-        
-        // Compression level bar
-        ctx.fillStyle = colors[index];
-        ctx.fillRect(x + 1, bandY - barHeight, 16, barHeight);
-        
-        // Border
-        ctx.strokeStyle = colors[index];
-        ctx.lineWidth = 1;
-        ctx.strokeRect(x, bandY - bandMaxHeight, 18, bandMaxHeight);
-        
-        // Band label
-        ctx.font = 'bold 9px monospace';
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-        ctx.textAlign = 'center';
-        ctx.fillText(bandName.toUpperCase(), x + 9, bandY + 12);
-        
-        // Compression amount label (if compressing)
-        if (normalizedLevel > 0.1) {
-          ctx.font = '8px monospace';
-          ctx.fillStyle = colors[index];
-          ctx.fillText(`${Math.abs(bandValue).toFixed(1)}dB`, x + 9, bandY - bandMaxHeight - 3);
-        }
-      });
-      
-      // Band compression summary
-      const totalCompression = Math.abs(bands.low || 0) + Math.abs(bands.mid || 0) + Math.abs(bands.high || 0);
-      if (totalCompression > 0.5) {
-        ctx.font = '9px system-ui';
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
-        ctx.textAlign = 'left';
-        ctx.fillText('Multi-band', envelopePadding + envelopeWidth - 80, envelopeVisualTop + 10);
       }
     }
 
     // Title
-    ctx.font = 'bold 11px system-ui';
+    ctx.font = 'bold 10px system-ui';
     ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
     ctx.textAlign = 'left';
-    ctx.fillText('ATTACK / RELEASE', envelopePadding, envelopeVisualTop - 2);
+    ctx.fillText('TRANSFER CURVE', curveLeft, curveTop - 8);
 
-    // Metrics (top right)
-    if (metricsDb && isFinite(metricsDb.rmsDb)) {
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-      ctx.fillRect(displayWidth - 110, 8, 105, 28);
-      
-      ctx.font = '9px monospace';
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-      ctx.textAlign = 'right';
-      ctx.fillText(`RMS: ${metricsDb.rmsDb.toFixed(1)} dB`, displayWidth - 8, 20);
-      if (isFinite(metricsDb.peakDb)) {
-        ctx.fillText(`PEAK: ${metricsDb.peakDb.toFixed(1)} dB`, displayWidth - 8, 32);
+    // ============================================================================
+    // SECTION 3: SIDECHAIN VISUALIZATION (Bottom, if enabled)
+    // ============================================================================
+    
+    if (scEnable && sidechainHeight > 0) {
+      const scTop = displayHeight - sidechainHeight;
+      const scPadding = 20;
+      const scWidth = displayWidth - scPadding * 2;
+      const scInnerHeight = sidechainHeight - 40;
+    
+    // Background
+    ctx.fillStyle = 'rgba(8, 8, 12, 0.9)';
+      ctx.fillRect(scPadding, scTop, scWidth, scInnerHeight);
+    
+      // Border
+      ctx.strokeStyle = hexToRgba(categoryColors.secondary, 0.3);
+    ctx.lineWidth = 1;
+      ctx.strokeRect(scPadding, scTop, scWidth, scInnerHeight);
+
+      // Draw sidechain waveform
+      if (isPlaying && sidechainHistoryRef && sidechainHistoryRef.current && sidechainHistoryRef.current.length > 1) {
+        const scHistory = sidechainHistoryRef.current;
+        const timeWindow = 4000;
+        const now = performance.now();
+        
+        const recentPoints = scHistory
+          .map(point => ({
+            ...point,
+            age: now - point.timestamp
+          }))
+          .filter(point => point.age <= timeWindow && point.age >= 0)
+          .sort((a, b) => a.timestamp - b.timestamp);
+        
+        if (recentPoints.length > 1) {
+          // Normalize sidechain level to 0-1 range (assuming -60dB to 0dB)
+          const normalizeLevel = (db) => Math.max(0, Math.min(1, (db + 60) / 60));
+          
+          ctx.strokeStyle = hexToRgba(categoryColors.secondary, 0.8);
+    ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          
+          for (let i = 0; i < recentPoints.length; i++) {
+            const point = recentPoints[i];
+            const x = scPadding + scWidth - ((point.age / timeWindow) * scWidth);
+            const normalized = normalizeLevel(point.level);
+            const y = scTop + scInnerHeight - (normalized * scInnerHeight);
+            
+            if (i === 0) {
+              ctx.moveTo(x, y);
+            } else {
+              ctx.lineTo(x, y);
+            }
+          }
+          ctx.stroke();
+        }
       }
+
+      // Title
+      ctx.font = 'bold 10px system-ui';
+      ctx.fillStyle = hexToRgba(categoryColors.secondary, 0.8);
+    ctx.textAlign = 'left';
+      ctx.fillText('SIDECHAIN', scPadding, scTop - 8);
+      
+      // Current sidechain level
+      if (sidechainLevel !== null && isFinite(sidechainLevel)) {
+        ctx.font = '10px monospace';
+        ctx.fillStyle = categoryColors.secondary;
+        ctx.textAlign = 'right';
+        ctx.fillText(`${sidechainLevel.toFixed(1)} dB`, scPadding + scWidth - 8, scTop - 8);
+      }
+    }
+    
+    // ============================================================================
+    // INFO PANEL (Top right) - Minimal
+    // ============================================================================
+    
+    const modelNames = ['Clean/VCA', 'Opto', 'FET'];
+    const currentModelName = modelNames[compressorModel] || 'Clean/VCA';
+    
+        ctx.font = '9px system-ui';
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+      ctx.textAlign = 'right';
+    ctx.fillText(currentModelName, displayWidth - 8, 12);
+    
+    if (mix < 100) {
+      ctx.fillText(`Mix: ${mix}%`, displayWidth - 8, 24);
     }
 
     ctx.restore();
-  }, [threshold, ratio, knee, attack, release, isPlaying, getTimeDomainData, metricsDb, sidechainLevel, scEnable, grHistoryRef, bandDataRef, gainReduction, categoryColors, hexToRgba]);
+  }, [threshold, ratio, knee, attack, release, isPlaying, getTimeDomainData, metricsDb, sidechainLevel, scEnable, compressorModel, mix, grHistoryRef, sidechainHistoryRef, categoryColors, hexToRgba]);
 
   // Canvas resize handling
   useEffect(() => {
@@ -858,19 +516,16 @@ const CompressionVisualizer = ({
   }, []);
 
   // Use CanvasRenderManager
-  useRenderer(drawVisualizer, 5, 16, [threshold, ratio, knee, attack, release, isPlaying, sidechainLevel, scEnable, gainReduction]);
-
-  // Container styling using categoryColors prop
-  const containerStyle = {
-    background: 'rgba(0, 0, 0, 0.5)',
-    borderColor: `${categoryColors.primary}33`, // 20% opacity in hex
-  };
+  useRenderer(drawVisualizer, 5, 16, [threshold, ratio, knee, attack, release, isPlaying, sidechainLevel, scEnable, compressorModel, mix, gainReduction]);
 
   return (
     <div 
       ref={containerRef} 
-      className="w-full h-[450px] rounded-xl overflow-hidden"
-      style={containerStyle}
+      className="w-full h-[500px] rounded-xl overflow-hidden"
+      style={{
+        background: 'rgba(0, 0, 0, 0.3)',
+        border: `1px solid ${categoryColors.primary}33`,
+      }}
     >
       <canvas ref={canvasRef} className="w-full h-full" />
     </div>
@@ -885,10 +540,9 @@ const GainReductionMeter = ({ gainReduction, categoryColors }) => {
   const absGR = Math.abs(gainReduction);
   const percentage = Math.min((absGR / 20) * 100, 100);
 
-  // Dynamic colors based on GR amount and category
-  let color = categoryColors?.primary || '#00A8E8'; // Default: category primary, fallback to blue
-  if (absGR > 12) color = '#ef4444'; // Red (heavy compression)
-  else if (absGR > 6) color = '#f59e0b'; // Amber (moderate compression)
+  let color = categoryColors?.primary || '#00A8E8';
+  if (absGR > 12) color = '#ef4444';
+  else if (absGR > 6) color = '#f59e0b';
 
   return (
     <div className="flex flex-col items-center gap-3">
@@ -952,7 +606,9 @@ const AdvancedCompressorUI_V2 = ({ trackId, effect, effectNode, definition }) =>
     stereoLink = 100,
     lookahead = 3,
     detectionMode = 0,
-    rmsWindow = 10
+    rmsWindow = 10,
+    compressorModel = 0,
+    mix = 100
   } = effect.settings || {};
 
   const [gainReduction, setGainReduction] = useState(0);
@@ -962,7 +618,11 @@ const AdvancedCompressorUI_V2 = ({ trackId, effect, effectNode, definition }) =>
   const categoryColors = useMemo(() => getCategoryColors('dynamics-forge'), []);
 
   // Use ParameterBatcher for smooth parameter updates
-  const { setParam } = useParameterBatcher(effectNode);
+  const { setParam, setParams } = useParameterBatcher(effectNode);
+
+  // Local state for UI
+  const [localCompressorModel, setLocalCompressorModel] = useState(compressorModel);
+  const [localMix, setLocalMix] = useState(mix);
 
   // Ghost values
   const ghostThreshold = useGhostValue(threshold, 400);
@@ -970,6 +630,7 @@ const AdvancedCompressorUI_V2 = ({ trackId, effect, effectNode, definition }) =>
   const ghostAttack = useGhostValue(attack * 1000, 400);
   const ghostRelease = useGhostValue(release * 1000, 400);
   const ghostKnee = useGhostValue(knee, 400);
+  const ghostMix = useGhostValue(localMix, 400);
 
   // Audio plugin for metering
   const { plugin } = useAudioPlugin(trackId, effect.id, {
@@ -982,44 +643,46 @@ const AdvancedCompressorUI_V2 = ({ trackId, effect, effectNode, definition }) =>
 
   // Store refs for CompressionVisualizer to access worklet data
   const grHistoryRef = useRef([]);
-  const bandDataRef = useRef({ low: 0, mid: 0, high: 0 });
+  const sidechainHistoryRef = useRef([]);
 
-  // Listen to worklet messages for GR, sidechain, and band data
+  // Listen to worklet messages for GR, sidechain data
   useEffect(() => {
     const audioNode = plugin?.audioNode?.workletNode;
     if (!audioNode?.port) return;
 
     const handleMessage = (event) => {
-      const { type, gr, scLevel, bands } = event.data;
+      const { type, gr, scLevel } = event.data;
       if (type === 'metering') {
         if (typeof gr === 'number' && isFinite(gr)) {
           setGainReduction(gr);
           
-          // Add to GR history for timeline visualization
+          // Add to GR history
           grHistoryRef.current.push({
             gr: gr,
             timestamp: performance.now()
           });
           
           // Trim history
-          if (grHistoryRef.current.length > 300) {
+          if (grHistoryRef.current.length > 400) {
             grHistoryRef.current.shift();
           }
         }
         
         if (scLevel !== null && typeof scLevel === 'number' && isFinite(scLevel)) {
           setSidechainLevel(scLevel);
+          
+          // Add to sidechain history
+          sidechainHistoryRef.current.push({
+            level: scLevel,
+            timestamp: performance.now()
+          });
+          
+          // Trim history
+          if (sidechainHistoryRef.current.length > 400) {
+            sidechainHistoryRef.current.shift();
+          }
         } else {
           setSidechainLevel(null);
-        }
-        
-        // Store band data for visualization
-        if (bands && typeof bands === 'object') {
-          bandDataRef.current = {
-            low: bands.low || 0,
-            mid: bands.mid || 0,
-            high: bands.high || 0
-          };
         }
       }
     };
@@ -1033,11 +696,34 @@ const AdvancedCompressorUI_V2 = ({ trackId, effect, effectNode, definition }) =>
     };
   }, [plugin]);
 
+  // Sync with effect.settings when presets are loaded
+  useEffect(() => {
+    if (!effectNode || !effect.settings) return;
+
+    const updates = {};
+    if (effect.settings.compressorModel !== undefined) {
+      setLocalCompressorModel(effect.settings.compressorModel);
+      updates.compressorModel = effect.settings.compressorModel;
+    }
+    if (effect.settings.mix !== undefined) {
+      setLocalMix(effect.settings.mix);
+      updates.mix = effect.settings.mix;
+    }
+
+    if (Object.keys(updates).length > 0) {
+      setParams(updates, { immediate: true });
+    }
+  }, [effect.settings, effectNode, setParams]);
+
   // Handle parameter changes
   const { handleMixerEffectChange } = useMixerStore.getState();
   const handleParamChange = useCallback((key, value) => {
     setParam(key, value);
     handleMixerEffectChange(trackId, effect.id, { [key]: value });
+    
+    // Update local state
+    if (key === 'compressorModel') setLocalCompressorModel(value);
+    if (key === 'mix') setLocalMix(value);
   }, [setParam, handleMixerEffectChange, trackId, effect.id]);
 
   return (
@@ -1064,8 +750,10 @@ const AdvancedCompressorUI_V2 = ({ trackId, effect, effectNode, definition }) =>
               gainReduction={gainReduction}
               sidechainLevel={sidechainLevel}
               scEnable={scEnable}
+              compressorModel={localCompressorModel}
+              mix={localMix}
               grHistoryRef={grHistoryRef}
-              bandDataRef={bandDataRef}
+              sidechainHistoryRef={sidechainHistoryRef}
               categoryColors={categoryColors}
             />
 
@@ -1080,6 +768,93 @@ const AdvancedCompressorUI_V2 = ({ trackId, effect, effectNode, definition }) =>
               <GainReductionMeter gainReduction={gainReduction} categoryColors={categoryColors} />
             </div>
 
+            {/* Compressor Model Selector */}
+            <div 
+              className="bg-gradient-to-br from-black/50 rounded-xl p-4"
+              style={{
+                background: `linear-gradient(135deg, rgba(0, 0, 0, 0.5) 0%, ${categoryColors.accent}20 100%)`,
+                border: `1px solid ${categoryColors.primary}33`,
+              }}
+            >
+              <div 
+                className="text-[9px] uppercase tracking-wider mb-3 font-bold"
+                style={{ color: `${categoryColors.secondary}B3` }}
+              >
+                Compressor Model
+              </div>
+              <ModeSelector
+                modes={[
+                  { 
+                    id: 0, 
+                    label: 'Clean/VCA', 
+                    icon: '⚡',
+                    description: 'Transparent, precise compression (VCA style)'
+                  },
+                  { 
+                    id: 1, 
+                    label: 'Opto', 
+                    icon: '🎵',
+                    description: 'Smooth, musical compression (LA-2A style)'
+                  },
+                  { 
+                    id: 2, 
+                    label: 'FET', 
+                    icon: '🔥',
+                    description: 'Aggressive, fast compression (1176 style)'
+                  }
+                ]}
+                activeMode={localCompressorModel}
+                onChange={(modeId) => handleParamChange('compressorModel', modeId)}
+                category="dynamics-forge"
+                orientation="horizontal"
+              />
+            </div>
+
+            {/* Mix/Blend Control */}
+            <div 
+              className="bg-gradient-to-br from-black/50 rounded-xl p-4"
+              style={{
+                background: `linear-gradient(135deg, rgba(0, 0, 0, 0.5) 0%, ${categoryColors.accent}20 100%)`,
+                border: `1px solid ${categoryColors.primary}33`,
+              }}
+            >
+              <div className="flex items-center justify-between mb-3">
+                <div 
+                  className="text-[9px] uppercase tracking-wider font-bold"
+                  style={{ color: `${categoryColors.secondary}B3` }}
+                >
+                  Mix / Blend
+                </div>
+                <div 
+                  className="text-[10px] font-mono"
+                  style={{ color: categoryColors.primary }}
+                >
+                  {localMix}%
+                </div>
+              </div>
+              <Knob
+                label=""
+                value={localMix}
+                ghostValue={ghostMix}
+                onChange={(val) => handleParamChange('mix', Math.round(val))}
+                min={0}
+                max={100}
+                defaultValue={100}
+                sizeVariant="medium"
+                category="dynamics-forge"
+                valueFormatter={(v) => `${Math.round(v)}%`}
+              />
+              <div 
+                className="text-[9px] text-white/50 mt-2 text-center"
+              >
+                {localMix === 100 ? 'Full Compression' : localMix === 0 ? 'Dry (Parallel)' : `${localMix}% Compression`}
+              </div>
+            </div>
+          </>
+        }
+
+        sidePanel={
+          <>
             {/* Manual Controls */}
             <ExpandablePanel
               title="Manual Control"
@@ -1087,7 +862,7 @@ const AdvancedCompressorUI_V2 = ({ trackId, effect, effectNode, definition }) =>
               category="dynamics-forge"
               defaultExpanded={true}
             >
-              <div className="grid grid-cols-5 gap-6 p-4">
+              <div className="grid grid-cols-2 gap-4 p-4">
                 <Knob
                   label="THRESHOLD"
                   value={threshold}
@@ -1168,11 +943,7 @@ const AdvancedCompressorUI_V2 = ({ trackId, effect, effectNode, definition }) =>
                 />
               </div>
             </ExpandablePanel>
-          </>
-        }
 
-        sidePanel={
-          <>
             {/* Sidechain Controls */}
             <ExpandablePanel
               title="Sidechain"

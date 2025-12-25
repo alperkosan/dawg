@@ -29,6 +29,9 @@ export class AutomationLane {
         this.visible = true;
         this.height = 60; // Default lane height in pixels
         this.color = AutomationLane.getDefaultColor(ccNumber);
+        // ✅ NEW: Interpolation method for automation curves
+        // Supported: 'linear', 'exponential', 'logarithmic', 'bezier', 'cubic', 'step', 'easeInOut', 'easeIn', 'easeOut'
+        this.interpolation = 'linear'; // Default to linear
     }
 
     /**
@@ -126,11 +129,30 @@ export class AutomationLane {
     /**
      * Get value at time (interpolated)
      * @param {number} time - Time in steps
-     * @param {string} [interpolation='linear'] - Interpolation method
+     * @param {string} [interpolation] - Interpolation method (optional, uses lane's interpolation if not provided)
+     * @param {Object} [options={}] - Interpolation options
      * @returns {number|null} Value or null
      */
-    getValueAtTime(time, interpolation = 'linear') {
-        return this.ccData.getValueAtTime(time, interpolation);
+    getValueAtTime(time, interpolation = null, options = {}) {
+        // ✅ NEW: Use lane's interpolation method if not explicitly provided
+        const effectiveInterpolation = interpolation || this.interpolation || 'linear';
+        return this.ccData.getValueAtTime(time, effectiveInterpolation, options);
+    }
+
+    /**
+     * Set interpolation method for this lane
+     * @param {string} method - Interpolation method ('linear', 'exponential', 'bezier', etc.)
+     */
+    setInterpolation(method) {
+        this.interpolation = method;
+    }
+
+    /**
+     * Get current interpolation method
+     * @returns {string} Current interpolation method
+     */
+    getInterpolation() {
+        return this.interpolation || 'linear';
     }
 
     /**

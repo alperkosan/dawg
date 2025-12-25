@@ -57,20 +57,28 @@ export const ADSRCanvas = ({
   // Normalize values for display (0-1 range to canvas coordinates)
   const maxTime = 3; // Maximum time in seconds for A, D, R
 
-  // Horizontal layout (left → right)
-  const leftPadding = 10;
-  const rightPadding = 10;
-  const attackWidth = actualWidth * 0.3;   // 30% width reserved for attack
-  const decayWidth = actualWidth * 0.3;    // 30% width reserved for decay
-  const sustainStartX = leftPadding + attackWidth + decayWidth;
-  const sustainEndX = actualWidth - rightPadding; // release spans this range
-  const releaseWidth = Math.max(1, sustainEndX - sustainStartX);
+  // Linear Time Layout
+  // We calculate a total duration to view, ensuring a minimum duration for usability.
+  // The sustain phase is given a visual duration (e.g., 20% of the view or a fixed time)
+  // so it doesn't disappear if we only have A, D, R.
 
-  const attackX = (attack / maxTime) * attackWidth;
-  const decayX = attackX + (decay / maxTime) * decayWidth;
-  const sustainX = sustainStartX;
-  const releaseX = sustainEndX;
+  const sustainVisualDuration = 0.5; // Visual duration for sustain in seconds
+  const totalDuration = attack + decay + release + sustainVisualDuration;
+  const minDuration = 2.0; // Minimum view duration in seconds
+  const viewDuration = Math.max(totalDuration * 1.1, minDuration); // Add 10% padding
+
+  const scale = actualWidth / viewDuration; // pixels per second
+
+  const attackX = attack * scale;
+  const decayX = attackX + decay * scale;
+  const sustainStartX = decayX;
+  const sustainEndX = sustainStartX + sustainVisualDuration * scale;
+  const releaseX = sustainEndX + release * scale;
+
   const sustainY = actualHeight - 10 - (sustain * (actualHeight - 20));
+
+  // Sustain handle position (midpoint of sustain phase)
+  const sustainHandleX = sustainStartX + (sustainEndX - sustainStartX) / 2;
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -83,6 +91,7 @@ export const ADSRCanvas = ({
     const textColor = getComputedColor('--zenith-text-primary', '#FFFFFF');
     const valueColor = getComputedColor('--zenith-text-tertiary', '#6B7280');
     const monoFont = getComputedColor('--zenith-font-mono', 'monospace');
+    const accentColor = actualColor;
 
     // Set canvas size for retina displays
     canvas.width = actualWidth * dpr;
@@ -97,44 +106,63 @@ export const ADSRCanvas = ({
     ctx.fillStyle = actualBgColor;
     ctx.fillRect(0, 0, actualWidth, actualHeight);
 
-    // Draw grid
+    // Draw grid (Time based)
     ctx.strokeStyle = actualGridColor;
     ctx.lineWidth = 1;
-    for (let i = 0; i <= 4; i++) {
-      const y = (i / 4) * actualHeight;
-      ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(actualWidth, y);
-      ctx.stroke();
+    ctx.beginPath();
+
+    // Vertical lines (every 0.5s or 1s depending on viewDuration)
+    const timeStep = viewDuration > 5 ? 1 : 0.5;
+    for (let t = timeStep; t < viewDuration; t += timeStep) {
+      const x = t * scale;
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, actualHeight);
     }
 
-    // Draw envelope curve
-    ctx.strokeStyle = actualColor;
+    // Horizontal lines
+    for (let i = 1; i < 4; i++) {
+      const y = (i / 4) * actualHeight;
+      ctx.moveTo(0, y);
+      ctx.lineTo(actualWidth, y);
+    }
+    ctx.stroke();
+
+    // Create gradient fill
+    const gradient = ctx.createLinearGradient(0, 0, 0, actualHeight);
+    gradient.addColorStop(0, `${accentColor}40`); // 25% opacity
+    gradient.addColorStop(1, `${accentColor}05`); // ~2% opacity
+
+    // Draw envelope path for fill
+    ctx.beginPath();
+    ctx.moveTo(0, actualHeight - 10); // Start at 0
+    ctx.lineTo(attackX, 10); // Attack Peak
+    ctx.lineTo(decayX, sustainY); // Decay End / Sustain Start
+    ctx.lineTo(sustainEndX, sustainY); // Sustain End
+    ctx.lineTo(releaseX, actualHeight - 10); // Release End
+    ctx.lineTo(releaseX, actualHeight); // Bottom right
+    ctx.lineTo(0, actualHeight); // Bottom left
+    ctx.closePath();
+    ctx.fillStyle = gradient;
+    ctx.fill();
+
+    // Draw envelope line
+    ctx.strokeStyle = accentColor;
     ctx.lineWidth = 2.5;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
     ctx.beginPath();
-    ctx.moveTo(leftPadding, actualHeight - 10); // Start point (0, 0)
-
-    // Attack
-    ctx.lineTo(leftPadding + attackX, 10); // Peak
-
-    // Decay
-    ctx.lineTo(leftPadding + decayX, sustainY); // Sustain level
-
-    // Sustain (flat line)
-    ctx.lineTo(sustainX, sustainY);
-
-    // Release
+    ctx.moveTo(0, actualHeight - 10);
+    ctx.lineTo(attackX, 10);
+    ctx.lineTo(decayX, sustainY);
+    ctx.lineTo(sustainEndX, sustainY);
     ctx.lineTo(releaseX, actualHeight - 10);
-
     ctx.stroke();
 
     // Draw control points
     const drawPoint = (x, y, isActive, label) => {
-      ctx.fillStyle = isActive ? textColor : actualColor;
-      ctx.strokeStyle = isActive ? actualColor : textColor;
+      ctx.fillStyle = isActive ? textColor : actualBgColor;
+      ctx.strokeStyle = isActive ? accentColor : textColor;
       ctx.lineWidth = 2;
 
       ctx.beginPath();
@@ -145,27 +173,32 @@ export const ADSRCanvas = ({
       // Label
       if (isActive || hovering === label) {
         ctx.fillStyle = textColor;
-        ctx.font = `10px ${monoFont}`;
+        ctx.font = `bold 10px ${monoFont}`;
         ctx.textAlign = 'center';
         ctx.fillText(label.toUpperCase(), x, y - 12);
       }
     };
 
-    drawPoint(leftPadding + attackX, 10, dragging === 'attack' || hovering === 'attack', 'A');
-    drawPoint(leftPadding + decayX, sustainY, dragging === 'decay' || hovering === 'decay', 'D');
-    drawPoint(sustainX, sustainY, dragging === 'sustain' || hovering === 'sustain', 'S');
+    drawPoint(attackX, 10, dragging === 'attack' || hovering === 'attack', 'A');
+    drawPoint(decayX, sustainY, dragging === 'decay' || hovering === 'decay', 'D');
+    // Sustain handle is at the middle of sustain phase
+    drawPoint(sustainHandleX, sustainY, dragging === 'sustain' || hovering === 'sustain', 'S');
+    // Release handle is at the end of release phase
     drawPoint(releaseX, actualHeight - 10, dragging === 'release' || hovering === 'release', 'R');
 
-    // Draw values
+    // Draw values text
     ctx.fillStyle = valueColor;
-    ctx.font = `9px ${monoFont}`;
+    ctx.font = `10px ${monoFont}`;
     ctx.textAlign = 'left';
-    ctx.fillText(`A: ${(attack * 1000).toFixed(0)}ms`, 5, actualHeight - 5);
-    ctx.fillText(`D: ${(decay * 1000).toFixed(0)}ms`, 70, actualHeight - 5);
-    ctx.fillText(`S: ${(sustain * 100).toFixed(0)}%`, 135, actualHeight - 5);
-    ctx.fillText(`R: ${(release * 1000).toFixed(0)}ms`, 195, actualHeight - 5);
 
-  }, [attack, decay, sustain, release, actualWidth, actualHeight, actualColor, actualBgColor, actualGridColor, dragging, hovering, attackX, decayX, sustainX, sustainY, releaseX]);
+    const formatTime = (t) => t < 1 ? `${(t * 1000).toFixed(0)}ms` : `${t.toFixed(2)}s`;
+
+    ctx.fillText(`A: ${formatTime(attack)}`, 10, actualHeight - 6);
+    ctx.fillText(`D: ${formatTime(decay)}`, 80, actualHeight - 6);
+    ctx.fillText(`S: ${(sustain * 100).toFixed(0)}%`, 150, actualHeight - 6);
+    ctx.fillText(`R: ${formatTime(release)}`, 220, actualHeight - 6);
+
+  }, [attack, decay, sustain, release, actualWidth, actualHeight, actualColor, actualBgColor, actualGridColor, dragging, hovering, attackX, decayX, sustainStartX, sustainY, releaseX, sustainEndX, sustainHandleX, scale, viewDuration]);
 
   useEffect(() => {
     draw();
@@ -182,14 +215,14 @@ export const ADSRCanvas = ({
 
   const findClosestPoint = (mouseX, mouseY) => {
     const points = [
-      { name: 'attack', x: leftPadding + attackX, y: 10 },
-      { name: 'decay', x: leftPadding + decayX, y: sustainY },
-      { name: 'sustain', x: sustainX, y: sustainY },
+      { name: 'attack', x: attackX, y: 10 },
+      { name: 'decay', x: decayX, y: sustainY },
+      { name: 'sustain', x: sustainHandleX, y: sustainY }, // Sustain handle at midpoint
       { name: 'release', x: releaseX, y: actualHeight - 10 }
     ];
 
     let closest = null;
-    let minDist = 15; // Minimum distance to activate
+    let minDist = 20; // Increased hit area
 
     points.forEach(point => {
       const dist = Math.sqrt(Math.pow(mouseX - point.x, 2) + Math.pow(mouseY - point.y, 2));
@@ -217,26 +250,26 @@ export const ADSRCanvas = ({
     if (dragging) {
       const newValues = { attack, decay, sustain, release };
 
+      // Convert mouse X to time
+      const timeAtMouse = Math.max(0, pos.x / scale);
+
       if (dragging === 'attack') {
-        const ratio = Math.max(0, Math.min(1, (pos.x - leftPadding) / attackWidth));
-        const newAttack = Math.max(0.001, Math.min(maxTime, ratio * maxTime));
-        newValues.attack = newAttack;
+        // Attack is simply time at mouse
+        newValues.attack = Math.min(maxTime, timeAtMouse);
       } else if (dragging === 'decay') {
-        // Decay measured from end of attack segment
-        const localX = Math.max(0, Math.min(decayWidth, (pos.x - leftPadding - attackX)));
-        const ratio = Math.max(0, Math.min(1, localX / decayWidth));
-        const newDecay = Math.max(0.001, Math.min(maxTime, ratio * maxTime));
-        newValues.decay = newDecay;
+        // Decay is time at mouse minus attack time
+        newValues.decay = Math.max(0.001, Math.min(maxTime, timeAtMouse - attack));
       } else if (dragging === 'sustain') {
+        // Sustain is vertical only
         const newSustain = Math.max(0, Math.min(1, 1 - (pos.y - 10) / (actualHeight - 20)));
         newValues.sustain = newSustain;
       } else if (dragging === 'release') {
-        // Release measured from sustain segment start to right padding
-        const clampedX = Math.max(sustainStartX, Math.min(sustainEndX, pos.x));
-        const localX = clampedX - sustainStartX;
-        const ratio = Math.max(0, Math.min(1, localX / releaseWidth));
-        const newRelease = Math.max(0.001, Math.min(maxTime, ratio * maxTime));
-        newValues.release = newRelease;
+        // Release is time at mouse minus end of sustain
+        // Note: sustainEndX depends on scale, which depends on total duration...
+        // But visually, the user is dragging the end point.
+        // The start of release is at (attack + decay + sustainVisualDuration)
+        const releaseStartTime = attack + decay + sustainVisualDuration;
+        newValues.release = Math.max(0.001, Math.min(maxTime, timeAtMouse - releaseStartTime));
       }
 
       onChange?.(newValues);
@@ -245,7 +278,7 @@ export const ADSRCanvas = ({
       const point = findClosestPoint(pos.x, pos.y);
       setHovering(point);
     }
-  }, [dragging, attack, decay, sustain, release, attackX, actualWidth, actualHeight, onChange]);
+  }, [dragging, attack, decay, sustain, release, scale, actualHeight, onChange, maxTime, sustainVisualDuration]);
 
   const handleMouseUp = useCallback(() => {
     if (dragging) {
