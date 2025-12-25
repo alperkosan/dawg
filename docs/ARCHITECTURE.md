@@ -1,9 +1,22 @@
 # 🏗️ DAWG Architecture Documentation
 
-**Last Updated:** 2025-01-XX  
+> 📚 [← Back to Documentation Hub](./README.md)
+
+**Last Updated:** 2025-12-25  
 **Version:** 2.0.0
 
 ---
+
+## ⚡ Performance Impact Summary
+
+| Component | Most Expensive Function | Why | Mitigation |
+|:---|:---|:---|:---|
+| `UnifiedMixer` | `process_mix()` | Wasm DSP on every audio frame | SIMD, batching |
+| `PlaybackManager` | `_schedulePatternContent()` | Iterates all notes on play/seek | Debounced scheduling |
+| `EffectRegistry` | `createEffectNode()` | Instantiates AudioWorkletNode | Lazy init, pooling |
+
+---
+
 
 ## 📋 Table of Contents
 

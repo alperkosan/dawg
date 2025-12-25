@@ -1,9 +1,12 @@
 # ⚡ DAWG Performance Optimizations
 
-**Last Updated:** 2025-01-XX  
+> 📚 [← Back to Documentation Hub](./README.md)
+
+**Last Updated:** 2025-12-25  
 **Version:** 2.0.0
 
 ---
+
 
 ## 📋 Table of Contents
 

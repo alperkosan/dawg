@@ -1,102 +1,154 @@
 # 🏗️ DAWG Backend Server
 
-Fastify-based backend server for DAW collaboration platform.
+> 📚 [← Back to Documentation Hub](../docs/README.md)
 
-## 🚀 Quick Start
+Fastify-based backend server for the DAW collaboration platform.
 
-### Prerequisites
+---
 
-- Node.js 18+
-- PostgreSQL 14+
-- Redis (optional, for caching)
-- MinIO or S3-compatible storage (optional, for file storage)
-
-### Installation
+## ⚡ Quick Start
 
 ```bash
-# Install dependencies
+cd server
 npm install
-
-# Copy environment file
-cp .env.example .env
-
-# Edit .env with your configuration
-```
-
-### Development
-
-```bash
-# Start development server
+npm run migrate
 npm run dev
-
-# Server will run on http://localhost:3000
+# Server runs at http://localhost:3000
 ```
 
-### Production
+---
+
+## 📋 Prerequisites
+
+| Requirement | Version | Notes |
+|:---|:---|:---|
+| **Node.js** | 18+ | Runtime environment |
+| **PostgreSQL** | 14+ | Database (local or Neon) |
+| **npm** | 8+ | Package manager |
+
+---
+
+## 🗄️ Database Setup
+
+### Option 1: Neon (Cloud - Recommended for Production)
+
+1.  Create a project at [console.neon.tech](https://console.neon.tech).
+2.  Copy the **Pooler Connection String** (ends with `-pooler`).
+3.  Set `DATABASE_URL` in your `.env` file.
 
 ```bash
-# Build
-npm run build
-
-# Start
-npm start
+DATABASE_URL=postgresql://user:pass@ep-xxx-pooler.region.aws.neon.tech/neondb?sslmode=require
 ```
+
+### Option 2: Local PostgreSQL (Development)
+
+**macOS (Postgres.app):**
+```bash
+# Download from https://postgresapp.com
+# Open app → Initialize
+/Applications/Postgres.app/Contents/Versions/latest/bin/createdb dawg
+```
+
+**macOS (Homebrew):**
+```bash
+brew install postgresql@14
+brew services start postgresql@14
+createdb dawg
+```
+
+**Linux:**
+```bash
+sudo apt-get install postgresql postgresql-contrib
+sudo systemctl start postgresql
+sudo -u postgres createdb dawg
+```
+
+### Run Migrations
+```bash
+cd server
+npm run migrate
+```
+
+---
+
+## 🔧 Environment Variables
+
+Create a `.env` file (or copy from `.env.example`):
+
+```env
+# Database
+DATABASE_URL=postgresql://localhost:5432/dawg
+
+# Server
+PORT=3000
+NODE_ENV=development
+
+# Auth
+JWT_SECRET=your-secret-key
+
+# CORS
+CORS_ORIGIN=http://localhost:5173
+
+# Storage (Bunny CDN)
+BUNNY_STORAGE_URL=https://storage.bunnycdn.com/your-zone
+BUNNY_API_KEY=your-api-key
+```
+
+---
 
 ## 📁 Project Structure
 
 ```
 server/
 ├── src/
-│   ├── config/          # Configuration
-│   ├── routes/           # API routes
-│   ├── services/         # Business logic
-│   ├── middleware/       # Middleware
-│   ├── utils/            # Utilities
-│   ├── types/            # TypeScript types
-│   └── index.ts          # Entry point
-├── migrations/           # Database migrations
-├── tests/                # Tests
-└── package.json
+│   ├── index.ts          # Entry point
+│   ├── routes/           # API route definitions
+│   ├── services/         # Business logic (database, storage)
+│   ├── middleware/       # Auth, validation
+│   ├── utils/            # Helpers
+│   └── types/            # TypeScript types
+├── migrations/           # SQL migrations
+├── api/                  # Vercel serverless entry
+└── scripts/              # Utility scripts
 ```
+
+---
 
 ## 🔌 API Endpoints
 
 ### Authentication
-- `POST /api/auth/register` - Register new user
-- `POST /api/auth/login` - Login
-- `POST /api/auth/refresh` - Refresh token
-- `POST /api/auth/logout` - Logout
-- `GET /api/auth/me` - Get current user
+| Method | Path | Description |
+|:---|:---|:---|
+| `POST` | `/api/auth/register` | Register new user |
+| `POST` | `/api/auth/login` | Login |
+| `GET` | `/api/auth/me` | Get current user |
 
 ### Projects
-- `GET /api/projects` - List projects
-- `POST /api/projects` - Create project
-- `GET /api/projects/:id` - Get project
-- `PUT /api/projects/:id` - Update project
-- `DELETE /api/projects/:id` - Delete project
+| Method | Path | Description |
+|:---|:---|:---|
+| `GET` | `/api/projects` | List user projects |
+| `POST` | `/api/projects` | Create project |
+| `GET` | `/api/projects/:id` | Get project |
+| `PUT` | `/api/projects/:id` | Update project |
+| `DELETE` | `/api/projects/:id` | Delete project |
 
-### Users
-- `GET /api/users/:id` - Get user
-- `PUT /api/users/me` - Update current user
+### Assets
+| Method | Path | Description |
+|:---|:---|:---|
+| `POST` | `/api/assets/upload` | Upload audio file |
+| `GET` | `/api/system-assets` | List system samples |
 
-## 🔧 Configuration
+---
 
-See `.env.example` for all configuration options.
+## ⚡ Performance Notes
 
-Key settings:
-- `DATABASE_URL` - PostgreSQL connection string
-- `JWT_SECRET` - JWT signing secret
-- `STORAGE_PROVIDER` - Storage provider (minio, s3, r2)
-- `CORS_ORIGIN` - Allowed CORS origins
+| Component | Cost | Notes |
+|:---|:---|:---|
+| `database.ts: testConnection()` | ~5s cold start | Use connection pooling (Neon) |
+| `assets.ts: upload` | I/O bound | Streams directly to Bunny CDN |
+| `projects.ts: PUT` | DB write | Uses optimistic locking |
 
-## 📚 Documentation
-
-Full backend architecture documentation is in `/docs/backend/`:
-- [Backend Architecture Design](../../docs/backend/BACKEND_ARCHITECTURE_DESIGN.md)
-- [User Management Design](../../docs/backend/USER_MANAGEMENT_DESIGN.md)
-- [File Storage Design](../../docs/backend/FILE_STORAGE_DESIGN.md)
-- [Sharing System Design](../../docs/backend/SHARING_SYSTEM_DESIGN.md)
-- [Collaboration Design](../../docs/backend/COLLABORATION_DESIGN.md)
+---
 
 ## 🧪 Testing
 
@@ -104,17 +156,30 @@ Full backend architecture documentation is in `/docs/backend/`:
 npm test
 ```
 
-## 📝 TODO
+---
 
-- [ ] Database setup and migrations
-- [ ] Authentication implementation
-- [ ] Project CRUD implementation
-- [ ] File upload (presigned URLs)
-- [ ] WebSocket for real-time collaboration
-- [ ] Redis caching
-- [ ] Background job queue
+## � Troubleshooting
 
-## 📄 License
+### Database Connection Error
+```bash
+# Check PostgreSQL is running
+brew services list  # macOS
+sudo systemctl status postgresql  # Linux
 
-MIT
+# Test connection
+psql -d dawg -c "SELECT version();"
+```
 
+### Port Already in Use
+Change `PORT` in `.env` and update `CORS_ORIGIN`.
+
+---
+
+## 📚 Related Documentation
+
+- [Database Schema](../docs/system_index/server/02_database_schema.md)
+- [Bunny CDN Setup](./BUNNY_CDN_SETUP.md)
+
+---
+
+**Last Updated:** 2025-12-25

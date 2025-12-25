@@ -1,9 +1,22 @@
 # 🎵 DAWG Features Documentation
 
-**Last Updated:** 2025-01-XX  
+> 📚 [← Back to Documentation Hub](./README.md)
+
+**Last Updated:** 2025-12-25  
 **Version:** 2.0.0
 
 ---
+
+## ⚡ Feature Performance Notes
+
+| Feature | Performance Consideration | Hot Path |
+|:---|:---|:---|
+| **Piano Roll v7** | Canvas redraw on zoom/scroll | `renderer.js: renderNotes()` |
+| **Channel Rack** | Step grid can grow large | `UnifiedGridCanvas.jsx: drawGrid()` |
+| **Mixer System** | Real-time DSP | `UnifiedMixerNode.js: process()` |
+
+---
+
 
 ## 📋 Table of Contents
 

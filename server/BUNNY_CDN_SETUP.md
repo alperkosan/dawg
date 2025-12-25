@@ -1,6 +1,11 @@
-# Bunny CDN Setup Guide
+# 📦 Bunny CDN Setup Guide
 
-## Environment Variables
+> 📚 [← Back to Server README](./README.md) | [← Documentation Hub](../docs/README.md)
+
+**Last Updated:** 2025-12-25
+
+---
+
 
 Add these to your `.env` file (or copy from `.env.example`):
 

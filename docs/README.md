@@ -1,202 +1,93 @@
-# 📚 DAWG Documentation
+# 📚 DAWG Documentation Hub
 
-> **Digital Audio Workstation** - Professional music production in the browser
-
-**Last Updated:** 2025-01-XX  
-**Version:** 2.0.0
+Welcome to the DAWG documentation. This hub provides a structured navigation through all technical documents, organized from **General → Specific**.
 
 ---
 
-## 🚀 Quick Start
+## 🗺️ Navigation
 
-### For Users
-- **[Features Documentation](./FEATURES.md)** - Complete feature documentation
-- **[Development Guide](./DEVELOPMENT_GUIDE.md)** - Development setup and workflows
+### Level 1: Quick Start
+| Document | Description |
+|:---|:---|
+| [Project README](../README.md) | Project overview, installation, and quick start guide. |
 
-### For Developers
-- **[Master Plan](./MASTER_PLAN.md)** - Overall project status and roadmap
-- **[Architecture Documentation](./ARCHITECTURE.md)** - System architecture and design patterns
-- **[API Reference](./API_REFERENCE.md)** - API documentation for developers
-- **[Plugin Development Guide](./PLUGIN_DEVELOPMENT_QUICKSTART.md)** - Plugin development quickstart
+### Level 2: System Overviews
+| Document | Description |
+|:---|:---|
+| [🏗️ Architecture](./ARCHITECTURE.md) | High-level system design, layers, and design patterns. |
+| [🎵 Features](./FEATURES.md) | Complete feature list with implementation status. |
+| [⚡ Optimizations](./OPTIMIZATIONS.md) | Performance analysis and optimization history. |
+
+### Level 3: Deep Dives
+
+#### Audio Engine
+| Document | Description |
+|:---|:---|
+| [Engine Internals](../client/src/lib/ARCHITECTURE.md) | Detailed audio engine architecture, data flow diagrams. |
+| [DSP Protocol](./system_index/audio_engine/02_dsp_protocol.md) | JSON message schema for Worklet communication. |
+
+#### Frontend (Client)
+| Document | Description |
+|:---|:---|
+| [UI Component System](./system_index/client/02_ui_component_system.md) | Props API for Knobs, Faders, and custom controls. |
+| [Piano Roll v7](../client/src/features/piano_roll_v7/interaction/README.md) | Piano Roll interaction system details. |
+| [Controls Library](../client/src/components/controls/README.md) | Component usage and styling. |
+
+#### Backend (Server)
+| Document | Description |
+|:---|:---|
+| [Database & API](./system_index/server/02_database_schema.md) | PostgreSQL schema and Fastify API endpoints. |
+| [Server Setup](../server/README.md) | Neon, Bunny CDN, and Vercel deployment. |
+
+#### Plugins
+| Document | Description |
+|:---|:---|
+| [Plugin Quickstart](./PLUGIN_DEVELOPMENT_QUICKSTART.md) | How to create a new audio plugin. |
+| [Standardization Guide](./PLUGIN_STANDARDIZATION_GUIDE.md) | Plugin structure and API standards. |
+| [Component Library](./PLUGIN_COMPONENT_LIBRARY.md) | Reusable UI components for plugins. |
 
 ---
 
-## 📖 Documentation Structure
+## 📂 Directory Structure
 
 ```
 docs/
-├── README.md                    # This file - Navigation hub
-├── MASTER_PLAN.md              # Overall project status and roadmap
-├── ARCHITECTURE.md             # System architecture and design patterns
-├── FEATURES.md                 # Feature documentation
-├── DEVELOPMENT_GUIDE.md        # Development setup and workflows
-├── API_REFERENCE.md            # API documentation
-│
-├── features/                   # Feature-specific documentation
-│   ├── AI_INSTRUMENT_IMPLEMENTATION_GUIDE.md
-│   ├── AI_INSTRUMENT_RESEARCH.md
-│   ├── MIXER_CHANNEL_ROUTING.md
-│   └── ...
-│
-├── bugs/                       # Bug tracking and fixes
-│   ├── BUG_TRACKER.md         # Central bug tracker
-│   └── ...
-│
-├── optimizations/              # Performance optimizations
-│   ├── OPTIMIZATION_STATUS.md
-│   └── ...
-│
-├── architecture/               # Architecture documentation
-│   ├── INSTRUMENT_SYSTEM_ARCHITECTURE.md
-│   └── ...
-│
-├── designs/                    # Design documentation
-│   ├── UNIFIED_INSTRUMENT_ARCHITECTURE.md
-│   └── ...
-│
-└── archive/                    # Completed features and historical documentation
-    ├── completed_features/
-    ├── old_analysis/
-    └── test_files/
+├── README.md               # 👈 You are here (Documentation Hub)
+├── ARCHITECTURE.md         # Level 2: System overview
+├── FEATURES.md             # Level 2: Feature list
+├── OPTIMIZATIONS.md        # Level 2: Performance
+├── system_index/           # Level 3: Deep dives
+│   ├── audio_engine/       # Audio DSP specs
+│   ├── client/             # Frontend specs
+│   └── server/             # Backend specs
+├── features/               # Feature-specific docs
+├── optimizations/          # Performance analysis
+├── bugs/                   # Bug tracking
+└── archive/                # Historical/completed docs
 ```
 
----
+### 📁 Subdirectory Indexes
 
-## 🎯 Current Status
+| Directory | Index | Description |
+|:---|:---|:---|
+| `features/` | [📋 Feature Index](./features/README.md) | All feature design docs (AI Instrument, Mixer, Timeline). |
+| `optimizations/` | [⚡ Optimization Index](./optimizations/README.md) | Canvas, CPU, memory optimization docs. |
+| `bugs/` | [🐛 Bug Tracker](./bugs/README.md) | Current bugs and analysis documents. |
+| `system_index/` | [🔍 System Index](./system_index/index.md) | Deep dive specs (DSP, UI, Database). |
 
-### Overall Progress: 65% Complete
-
-**Completed:**
-- ✅ Audio Engine: 100%
-- ✅ Piano Roll: 100%
-- ✅ Channel Rack: 100%
-- ✅ Mixer System: 100%
-- ✅ Plugin System Infrastructure: 100%
-- ✅ Plugin Migrations: 50% (7/14)
-
-**In Progress:**
-- 🚧 Plugin Migrations: 50% (7/14 remaining)
-- 🚧 AI Instrument: 80% (UI complete, API pending)
-
-**Planned:**
-- 📋 Arrangement View: 0%
-- 📋 Advanced Automation: 0%
-- 📋 Mobile Support: 0%
-
-See [MASTER_PLAN.md](./MASTER_PLAN.md) for detailed status.
 
 ---
 
-## 📚 Core Documentation
+## ⚡ Performance Quick Reference
 
-### [Master Plan](./MASTER_PLAN.md)
-Overall project status, roadmap, and development rules.
+| Component | Most Expensive Function | Cost |
+|:---|:---|:---|
+| **UnifiedMixer** | `process_mix()` in Wasm | ~15% CPU under load |
+| **Piano Roll** | `renderNotes()` on large patterns | Canvas redraw |
+| **Plugin System** | `postMessage()` to Worklet | Reduced 98% via batching |
 
-### [Architecture](./ARCHITECTURE.md)
-System architecture, design patterns, and technical documentation.
-
-### [Features](./FEATURES.md)
-Complete feature documentation including Piano Roll, Channel Rack, Mixer, Plugins, and more.
-
-### [Development Guide](./DEVELOPMENT_GUIDE.md)
-Development setup, workflows, and contribution guidelines.
-
-### [API Reference](./API_REFERENCE.md)
-API documentation for developers.
+> For detailed performance analysis, see [OPTIMIZATIONS.md](./OPTIMIZATIONS.md).
 
 ---
 
-## 🔧 Development Resources
-
-### Plugin Development
-- **[Plugin Development Quickstart](./PLUGIN_DEVELOPMENT_QUICKSTART.md)** - Get started with plugin development
-- **[Plugin Standardization Guide](./PLUGIN_STANDARDIZATION_GUIDE.md)** - Plugin development standards
-- **[Plugin Component Library](./PLUGIN_COMPONENT_LIBRARY.md)** - UI component library
-- **[Plugin Design Philosophy](./PLUGIN_DESIGN_PHILOSOPHY.md)** - Plugin design principles
-- **[Plugin Design Themes](./PLUGIN_DESIGN_THEMES.md)** - Plugin theme system
-
-### Design System
-- **[Zenith Design System](./ZENITH_DESIGN_SYSTEM.md)** - Design system documentation
-- **[Plugin Design Philosophy](./PLUGIN_DESIGN_PHILOSOPHY.md)** - Plugin design principles
-- **[Plugin Design Themes](./PLUGIN_DESIGN_THEMES.md)** - Plugin theme system
-
-### Debugging
-- **[Debug Logger Guide](./DEBUG_LOGGER_GUIDE.md)** - Debug logging system
-- **[Bug Tracker](./bugs/BUG_TRACKER.md)** - Bug tracking and resolution
-
----
-
-## 🐛 Bug Tracking
-
-### [Bug Tracker](./bugs/BUG_TRACKER.md)
-Central bug tracker with priorities and status.
-
-### Recent Fixes
-- ✅ VortexPhaser audio crash
-- ✅ Master channel routing
-- ✅ Audio clip playback stability
-
----
-
-## 🚀 Quick Links
-
-### Features
-- **[Piano Roll v7](../../PIANO_ROLL_V7_IMPLEMENTATION_PLAN.md)** - Piano roll implementation plan
-- **[AI Instrument](./features/AI_INSTRUMENT_IMPLEMENTATION_GUIDE.md)** - AI instrument guide
-- **[Mixer System](./features/MIXER_CHANNEL_ROUTING.md)** - Mixer routing documentation
-
-### Development
-- **[Development Guide](./DEVELOPMENT_GUIDE.md)** - Development setup
-- **[Contributing](./CONTRIBUTING.md)** - Contribution guidelines
-- **[API Reference](./API_REFERENCE.md)** - API documentation
-
-### Resources
-- **[User Reports](../../client/kullanım%20notlarım)** - User feedback and testing notes
-- **[Archive](./archive/)** - Completed features and historical documentation
-
----
-
-## 📊 Performance Metrics
-
-### Current Performance
-- **CPU Usage:** 2-3% (idle)
-- **Memory Usage:** ~118MB (stable)
-- **AudioNode Count:** 864 (optimized)
-- **Build Time:** ~4.85s
-- **Bundle Size:** ~984 KB (gzipped)
-
-### Performance Optimizations
-See [optimizations/](./optimizations/) for detailed optimization documentation.
-
----
-
-## 🎯 Next Steps
-
-### Immediate (This Week)
-1. Complete AI Instrument API integration
-2. Migrate 2-3 remaining plugins
-3. Fix any critical bugs
-
-### Short Term (This Month)
-1. Complete all plugin migrations (14/14)
-2. Implement arrangement view audio clip editing
-3. Performance optimization pass
-
-### Long Term (Next Quarter)
-1. Plugin SDK development
-2. Mobile support (iPad)
-3. Community features
-
----
-
-## 📝 Notes
-
-- All completed features are documented in `archive/`
-- Bug fixes are tracked in `bugs/BUG_TRACKER.md`
-- Performance optimizations are documented in `optimizations/`
-- Feature designs are in `features/`
-
----
-
-**Last Updated:** 2025-01-XX  
-**Maintained by:** DAWG Development Team
+**Last Updated:** 2025-12-25
