@@ -16,6 +16,10 @@
  * │  │   Effect     │ Performance  │   Playback   │ Scheduler │ │
  * │  │   Service    │   Service    │   Service    │  Service  │ │
  * │  └──────────────┴──────────────┴──────────────┴───────────┘ │
+ * │  ┌──────────────┐                                           │
+ * │  │    WASM      │                                           │
+ * │  │   Service    │                                           │
+ * │  └──────────────┘                                           │
  * └─────────────────────────────────────────────────────────────┘
  * 
  * @module lib/core/services
@@ -29,3 +33,4 @@ export { EffectService } from './EffectService.js';
 export { PerformanceService } from './PerformanceService.js';
 export { PlaybackService } from './PlaybackService.js';
 export { SchedulerService, ScheduledEventType } from './SchedulerService.js';
+export { WasmService } from './WasmService.js';

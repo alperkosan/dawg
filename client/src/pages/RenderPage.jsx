@@ -5,7 +5,7 @@
  */
 
 import React, { useEffect } from 'react';
-import { NativeAudioEngine } from '@/lib/core/NativeAudioEngine';
+import { NativeAudioEngineFacade } from '@/lib/core/NativeAudioEngineFacade';
 import { AudioContextService } from '@/lib/services/AudioContextService';
 import { ProjectSerializer } from '@/lib/project/ProjectSerializer';
 import { exportManager } from '@/lib/audio/AudioExportManager.js';
@@ -71,8 +71,8 @@ export default function RenderPage() {
       console.log(`🎵 [RENDER] Step 2/7: Initializing audio engine...`);
       const engineStart = Date.now();
 
-      // Create and initialize NativeAudioEngine (same as App.jsx)
-      const audioEngine = new NativeAudioEngine();
+      // Create and initialize NativeAudioEngineFacade (replaces NativeAudioEngine)
+      const audioEngine = new NativeAudioEngineFacade();
       await audioEngine.initialize();
 
       // Set the engine in AudioContextService

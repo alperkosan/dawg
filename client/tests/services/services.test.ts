@@ -68,6 +68,7 @@ import { TransportService } from '@/lib/core/services/TransportService.js';
 import { WorkletService } from '@/lib/core/services/WorkletService.js';
 import { EffectService } from '@/lib/core/services/EffectService.js';
 import { PerformanceService } from '@/lib/core/services/PerformanceService.js';
+import { WasmService } from '@/lib/core/services/WasmService.js';
 
 // Mock audio context
 const createMockAudioContext = () => ({
@@ -407,6 +408,76 @@ describe('PerformanceService', () => {
     it('should have incrementMetric method', () => {
         service.incrementMetric('effectsCreated', 1);
         expect(service.metrics.effectsCreated).toBe(1);
+    });
+
+    it('should have dispose method', () => {
+        expect(typeof service.dispose).toBe('function');
+    });
+});
+
+// =================== WasmService Tests ===================
+
+describe('WasmService', () => {
+    let service;
+    let mockEngine;
+
+    beforeEach(() => {
+        mockEngine = createMockEngine();
+        service = new WasmService(mockEngine);
+    });
+
+    it('should initialize with default state', () => {
+        expect(service.isInitialized).toBe(false);
+        expect(service.useWasmMixer).toBe(true);
+        expect(service.channelAllocator.size).toBe(0);
+    });
+
+    it('should have initialize method', () => {
+        expect(typeof service.initialize).toBe('function');
+    });
+
+    it('should have allocateChannel method', () => {
+        expect(typeof service.allocateChannel).toBe('function');
+    });
+
+    it('should have freeChannel method', () => {
+        expect(typeof service.freeChannel).toBe('function');
+    });
+
+    it('should have getChannelForInsert method', () => {
+        expect(typeof service.getChannelForInsert).toBe('function');
+        expect(service.getChannelForInsert('unknown')).toBe(-1);
+    });
+
+    it('should have connectToChannel method', () => {
+        expect(typeof service.connectToChannel).toBe('function');
+    });
+
+    it('should have setChannelParams method', () => {
+        expect(typeof service.setChannelParams).toBe('function');
+    });
+
+    it('should have addChannelEffect method', () => {
+        expect(typeof service.addChannelEffect).toBe('function');
+    });
+
+    it('should have getWasmEffectType method', () => {
+        expect(typeof service.getWasmEffectType).toBe('function');
+        expect(service.getWasmEffectType('eq')).toBe(0);
+        expect(service.getWasmEffectType('compressor')).toBe(1);
+        expect(service.getWasmEffectType('unknown')).toBe(-1);
+    });
+
+    it('should have getStats method', () => {
+        expect(typeof service.getStats).toBe('function');
+        const stats = service.getStats();
+        expect(stats.isInitialized).toBe(false);
+        expect(stats.useWasmMixer).toBe(true);
+    });
+
+    it('should have getAllocatedChannels method', () => {
+        expect(typeof service.getAllocatedChannels).toBe('function');
+        expect(service.getAllocatedChannels()).toEqual([]);
     });
 
     it('should have dispose method', () => {

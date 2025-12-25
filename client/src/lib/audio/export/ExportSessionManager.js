@@ -1,7 +1,7 @@
 import { ProjectSerializer } from '@/lib/project/ProjectSerializer';
 import { AudioContextService } from '@/lib/services/AudioContextService';
 import { AudioEngineGlobal } from '@/lib/core/AudioEngineGlobal';
-import { NativeAudioEngine } from '@/lib/core/NativeAudioEngine';
+import { NativeAudioEngineFacade } from '@/lib/core/NativeAudioEngineFacade';
 
 /**
  * Runs an export task inside an isolated workspace so we don't mutate
@@ -15,7 +15,7 @@ import { NativeAudioEngine } from '@/lib/core/NativeAudioEngine';
  * - Restores the previous workspace/engine afterwards
  *
  * @param {object} projectData Serialized project payload to load
- * @param {(context: { audioEngine: NativeAudioEngine }) => Promise<any>} executor
+ * @param {(context: { audioEngine: NativeAudioEngineFacade }) => Promise<any>} executor
  * @param {object} options
  * @param {boolean} options.preserveWorkspace Whether to restore the previous workspace after export (default: true)
  * @returns {Promise<any>} Result of the executor
@@ -39,7 +39,7 @@ export async function runProjectExportSession(projectData, executor, options = {
   // Ensure stores are clean before loading the export project
   await ProjectSerializer.clearAll();
 
-  const exportEngine = new NativeAudioEngine();
+  const exportEngine = new NativeAudioEngineFacade();
   await exportEngine.initialize();
   await AudioContextService.setAudioEngine(exportEngine);
   await exportEngine.resumeAudioContext();

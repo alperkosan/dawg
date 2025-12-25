@@ -1,79 +1,24 @@
-// src/store/useMixerUIStore.js
-// ✅ PERFORMANCE: Separate UI state from audio state
-// This prevents unnecessary re-renders when UI changes don't affect audio
+/**
+ * @deprecated useMixerUIStore has been merged into useMixerStore
+ * 
+ * All UI state (activeChannelId, expandedChannels, etc.) is now part of useMixerStore.
+ * 
+ * Migration:
+ * - import { useMixerStore } from '@/store/useMixerStore';
+ * - const activeChannelId = useMixerStore(state => state.activeChannelId);
+ * 
+ * This file is kept for backward compatibility but will be removed in a future version.
+ */
 
-import { create } from 'zustand';
+import { useMixerStore } from './useMixerStore';
 
-export const useMixerUIStore = create((set, get) => ({
-  // ========================================================
-  // === UI-ONLY STATE (doesn't affect audio engine) ===
-  // ========================================================
+// Re-export useMixerStore as useMixerUIStore for backward compatibility
+export const useMixerUIStore = useMixerStore;
 
-  // Active channel selection
-  activeChannelId: 'master',
-
-  // Expanded channels (show/hide details)
-  expandedChannels: new Set(),
-
-  // Visible EQ sections
-  visibleEQs: new Set(),
-
-  // Visible send sections
-  visibleSends: new Set(),
-
-  // Scroll position (for virtual scrolling later)
-  scrollPosition: 0,
-
-  // ========================================================
-  // === ACTIONS ===
-  // ========================================================
-
-  setActiveChannelId: (trackId) => set({ activeChannelId: trackId }),
-
-  toggleChannelExpansion: (trackId) => {
-    set(state => {
-      const newExpanded = new Set(state.expandedChannels);
-      if (newExpanded.has(trackId)) {
-        newExpanded.delete(trackId);
-      } else {
-        newExpanded.add(trackId);
-      }
-      return { expandedChannels: newExpanded };
-    });
-  },
-
-  toggleChannelEQ: (trackId) => {
-    set(state => {
-      const newVisible = new Set(state.visibleEQs);
-      if (newVisible.has(trackId)) {
-        newVisible.delete(trackId);
-      } else {
-        newVisible.add(trackId);
-      }
-      return { visibleEQs: newVisible };
-    });
-  },
-
-  toggleChannelSends: (trackId) => {
-    set(state => {
-      const newVisible = new Set(state.visibleSends);
-      if (newVisible.has(trackId)) {
-        newVisible.delete(trackId);
-      } else {
-        newVisible.add(trackId);
-      }
-      return { visibleSends: newVisible };
-    });
-  },
-
-  setScrollPosition: (position) => set({ scrollPosition: position }),
-
-  // Reset all UI state
-  resetUIState: () => set({
-    activeChannelId: 'master',
-    expandedChannels: new Set(),
-    visibleEQs: new Set(),
-    visibleSends: new Set(),
-    scrollPosition: 0
-  })
-}));
+// Log deprecation warning in development
+if (process.env.NODE_ENV === 'development') {
+  console.warn(
+    '⚠️ DEPRECATED: useMixerUIStore has been merged into useMixerStore. ' +
+    'Please update your imports to use useMixerStore directly.'
+  );
+}

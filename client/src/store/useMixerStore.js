@@ -62,6 +62,25 @@ export const useMixerStore = create((set, get) => ({
   ],
 
   // ========================================================
+  // === UI STATE (merged from useMixerUIStore) ===
+  // ========================================================
+
+  // Active channel selection
+  activeChannelId: 'master',
+
+  // Expanded channels (show/hide details)
+  expandedChannels: new Set(),
+
+  // Visible EQ sections
+  visibleEQs: new Set(),
+
+  // Visible send sections
+  visibleSends: new Set(),
+
+  // Scroll position (for virtual scrolling)
+  scrollPosition: 0,
+
+  // ========================================================
   // === EYLEMLER (ACTIONS) ===
   // ========================================================
 
@@ -950,6 +969,59 @@ export const useMixerStore = create((set, get) => ({
 
     console.log(`✅ Track output set: ${trackId} → ${targetId || 'master'}`);
   },
+
+  // ========================================================
+  // === UI ACTIONS (merged from useMixerUIStore) ===
+  // ========================================================
+
+  setActiveChannelId: (trackId) => set({ activeChannelId: trackId }),
+
+  toggleChannelExpansion: (trackId) => {
+    set(state => {
+      const newExpanded = new Set(state.expandedChannels);
+      if (newExpanded.has(trackId)) {
+        newExpanded.delete(trackId);
+      } else {
+        newExpanded.add(trackId);
+      }
+      return { expandedChannels: newExpanded };
+    });
+  },
+
+  toggleChannelEQ: (trackId) => {
+    set(state => {
+      const newVisible = new Set(state.visibleEQs);
+      if (newVisible.has(trackId)) {
+        newVisible.delete(trackId);
+      } else {
+        newVisible.add(trackId);
+      }
+      return { visibleEQs: newVisible };
+    });
+  },
+
+  toggleChannelSends: (trackId) => {
+    set(state => {
+      const newVisible = new Set(state.visibleSends);
+      if (newVisible.has(trackId)) {
+        newVisible.delete(trackId);
+      } else {
+        newVisible.add(trackId);
+      }
+      return { visibleSends: newVisible };
+    });
+  },
+
+  setScrollPosition: (position) => set({ scrollPosition: position }),
+
+  // Reset all UI state
+  resetMixerUIState: () => set({
+    activeChannelId: 'master',
+    expandedChannels: new Set(),
+    visibleEQs: new Set(),
+    visibleSends: new Set(),
+    scrollPosition: 0
+  })
 }));
 
 // ⚡ FIX: Expose store globally to avoid circular dependency with AudioContextService

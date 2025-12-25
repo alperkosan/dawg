@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { AudioEngineGlobal } from '../lib/core/AudioEngineGlobal';
 import { EngineStateSyncService } from '../lib/services/EngineStateSyncService';
 import { AudioContextService } from '../lib/services/AudioContextService';
-import { NativeAudioEngine } from '../lib/core/NativeAudioEngine';
+import { NativeAudioEngineFacade } from '../lib/core/NativeAudioEngineFacade';
 import { EffectFactory } from '../lib/audio/effects/EffectFactory';
 import { visualizationEngine } from '@/features/visualization/engine/VisualizationEngine';
 import TimelineControllerSingleton from '../lib/core/TimelineControllerSingleton';
@@ -78,7 +78,7 @@ export const useSystemBoot = () => {
         console.log('🚀 Booting System...');
 
         try {
-            const engine = new NativeAudioEngine(audioEngineCallbacks);
+            const engine = new NativeAudioEngineFacade(audioEngineCallbacks);
             await engine.initialize();
             audioEngineRef.current = engine;
             window.audioEngine = engine;

@@ -131,6 +131,7 @@ SONRA:
 | `PerformanceService.js` | 210 | Metrics |
 | `PlaybackService.js` | 503 | Play/Stop/Loop |
 | `SchedulerService.js` | 387 | Note scheduling |
+| `WasmService.js` | 320 | WASM integration |
 
 ```javascript
 // Yeni dosya: NativeAudioEngineFacade.js

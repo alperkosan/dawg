@@ -15,7 +15,6 @@
 
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { useMixerStore } from '@/store/useMixerStore';
-import { useMixerUIStore } from '@/store/useMixerUIStore';
 import {
   SlidersHorizontal,
   Plus,
@@ -55,9 +54,9 @@ const Mixer = ({ isVisible = true }) => {
   const toggleSolo = useMixerStore(state => state.toggleSolo);
   const setTrackColor = useMixerStore(state => state.setTrackColor);
 
-  // UI state - subscribe to specific values only
-  const activeChannelId = useMixerUIStore(state => state.activeChannelId);
-  const setActiveChannelId = useMixerUIStore(state => state.setActiveChannelId);
+  // UI state - now part of useMixerStore (consolidated)
+  const activeChannelId = useMixerStore(state => state.activeChannelId);
+  const setActiveChannelId = useMixerStore(state => state.setActiveChannelId);
 
   // Close add menu when clicking outside
   useEffect(() => {

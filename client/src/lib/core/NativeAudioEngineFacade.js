@@ -39,6 +39,7 @@ import { TransportService } from './services/TransportService.js';
 import { WorkletService } from './services/WorkletService.js';
 import { EffectService } from './services/EffectService.js';
 import { PerformanceService } from './services/PerformanceService.js';
+import { WasmService } from './services/WasmService.js';
 
 // WASM components
 import { wasmAudioEngine } from './WasmAudioEngine.js';
@@ -81,6 +82,7 @@ export class NativeAudioEngineFacade {
         this._workletService = null;
         this._effectService = null;
         this._performanceService = null;
+        this._wasmService = null;
 
         // =================== LEGACY COMPATIBILITY ===================
         // These Maps are accessed directly by some components
@@ -174,6 +176,17 @@ export class NativeAudioEngineFacade {
             this._performanceService = new PerformanceService(this);
         }
         return this._performanceService;
+    }
+
+    get wasmService() {
+        if (!this._wasmService) {
+            this._wasmService = new WasmService(this);
+            // Sync with existing WASM state
+            this._wasmService.unifiedMixer = this.unifiedMixer;
+            this._wasmService.channelAllocator = this.channelAllocator;
+            this._wasmService.useWasmMixer = this.useWasmMixer;
+        }
+        return this._wasmService;
     }
 
     // =================== INITIALIZATION ===================

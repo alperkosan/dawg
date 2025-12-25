@@ -11,7 +11,7 @@ This roadmap addresses the architectural issues identified in the Engineering An
 | Phase | Duration | Focus | Status |
 |:---|:---|:---|:---|
 | **1. Foundation** | 2-3 weeks | TypeScript setup, Test infrastructure | ✅ Complete |
-| **2. Store Consolidation** | 2 weeks | Merge stores, selectors | ⏳ Partial |
+| **2. Store Consolidation** | 2 weeks | Merge stores, barrel exports | ✅ Partial (1 merged) |
 | **3. God Class Decomposition** | 3-4 weeks | Extract services, Facade pattern | ✅ Complete |
 | **4. Command Pattern** | 2 weeks | Undo/Redo, Logging | ✅ Complete |
 | **5. Memory Optimization** | 1 week | Object pooling, GC reduction | ✅ Complete |
@@ -27,11 +27,12 @@ This roadmap addresses the architectural issues identified in the Engineering An
 
 ---
 
-## Phase 2: Store Consolidation ⏳ PARTIAL
+## Phase 2: Store Consolidation ✅ PARTIAL
 
-- ✅ Type definitions (`store/types.ts`)
-- ✅ Optimized selectors for all major stores
-- ⏳ Store count reduced (16 → 15, target: 10)
+### Completed Merges
+| Source | Target | Lines Saved |
+|:---|:---|:---|
+| `useMixerUIStore` | `useMixerStore` | 55 lines |
 
 ---
 
