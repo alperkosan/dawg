@@ -24,6 +24,7 @@ export class UnifiedMixerNode {
         this.numChannels = numChannels;
         this.workletNode = null;
         this.isInitialized = false;
+        this.isFallback = false; // ✅ Track if we are in JS fallback mode
 
         // WASM module
         this.wasmModule = null;
@@ -156,6 +157,7 @@ export class UnifiedMixerNode {
                     this.workletNode.port.onmessage = this._handleMessage.bind(this);
 
                     if (event.data.success) {
+                        this.isFallback = !!event.data.fallback; // ✅ Set fallback flag from worklet
                         resolve();
                     } else {
                         reject(new Error(event.data.error || 'WASM initialization failed'));

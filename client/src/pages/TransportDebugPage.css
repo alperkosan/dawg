@@ -1,0 +1,288 @@
+/* Transport Debug Page Styles */
+
+.transport-debug-page {
+    min-height: 100vh;
+    background: #0a0a0f;
+    color: #e0e0e0;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    padding: 20px;
+}
+
+.debug-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 24px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid #333;
+}
+
+.debug-header h1 {
+    font-size: 24px;
+    font-weight: 600;
+    margin: 0;
+}
+
+.status {
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.status.idle {
+    background: #333;
+    color: #999;
+}
+
+.status.initializing {
+    background: #2a2a40;
+    color: #7b7bff;
+}
+
+.status.ready {
+    background: #1a3a1a;
+    color: #4ade80;
+}
+
+.status.error {
+    background: #3a1a1a;
+    color: #ff6b6b;
+}
+
+/* Init Section */
+.init-section {
+    display: flex;
+    justify-content: center;
+    padding: 60px 20px;
+}
+
+.init-btn {
+    padding: 16px 32px;
+    font-size: 18px;
+    font-weight: 600;
+    background: linear-gradient(135deg, #6366f1, #8b5cf6);
+    color: white;
+    border: none;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.init-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(99, 102, 241, 0.4);
+}
+
+/* Controls Section */
+.controls-section {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 24px;
+    padding: 16px;
+    background: #141420;
+    border-radius: 12px;
+}
+
+.control-btn {
+    padding: 12px 24px;
+    font-size: 14px;
+    font-weight: 600;
+    background: #252530;
+    color: #e0e0e0;
+    border: 1px solid #333;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.control-btn:hover {
+    background: #333340;
+    border-color: #555;
+}
+
+.control-btn.playing {
+    background: #1a3a1a;
+    border-color: #4ade80;
+    color: #4ade80;
+}
+
+.bpm-control {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+}
+
+.bpm-control label {
+    font-size: 14px;
+    color: #999;
+}
+
+.bpm-control input {
+    width: 80px;
+    padding: 8px 12px;
+    font-size: 14px;
+    background: #252530;
+    color: #e0e0e0;
+    border: 1px solid #333;
+    border-radius: 6px;
+}
+
+/* State Section */
+.state-section,
+.latency-section,
+.logs-section {
+    margin-bottom: 24px;
+    padding: 16px;
+    background: #141420;
+    border-radius: 12px;
+}
+
+.state-section h2,
+.latency-section h2,
+.logs-section h2 {
+    font-size: 16px;
+    font-weight: 600;
+    margin: 0 0 16px 0;
+    color: #999;
+}
+
+.state-grid,
+.latency-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 12px;
+}
+
+.state-item,
+.latency-item {
+    padding: 12px;
+    background: #1a1a25;
+    border-radius: 8px;
+    text-align: center;
+}
+
+.state-item.warning,
+.latency-item.warning {
+    background: #2a2a10;
+    border: 1px solid #f59e0b;
+}
+
+.latency-item.good {
+    background: #1a2a1a;
+    border: 1px solid #4ade80;
+}
+
+.latency-item.bad {
+    background: #2a1a1a;
+    border: 1px solid #ff6b6b;
+}
+
+.state-item label,
+.latency-item label {
+    display: block;
+    font-size: 11px;
+    color: #777;
+    margin-bottom: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.state-item .value,
+.latency-item .value {
+    font-size: 20px;
+    font-weight: 700;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+}
+
+.latency-legend {
+    display: flex;
+    gap: 16px;
+    margin-top: 12px;
+    font-size: 11px;
+}
+
+.latency-legend span {
+    padding: 4px 8px;
+    border-radius: 4px;
+}
+
+.latency-legend .good {
+    background: #1a2a1a;
+    color: #4ade80;
+}
+
+.latency-legend .warning {
+    background: #2a2a10;
+    color: #f59e0b;
+}
+
+.latency-legend .bad {
+    background: #2a1a1a;
+    color: #ff6b6b;
+}
+
+/* Logs Section */
+.logs-container {
+    max-height: 300px;
+    overflow-y: auto;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 12px;
+}
+
+.log-entry {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 6px 8px;
+    border-bottom: 1px solid #222;
+}
+
+.log-entry:hover {
+    background: #1a1a25;
+}
+
+.log-time {
+    color: #555;
+    min-width: 80px;
+}
+
+.log-type {
+    font-weight: 600;
+    min-width: 60px;
+}
+
+.log-entry.init .log-type {
+    color: #7b7bff;
+}
+
+.log-entry.sab .log-type {
+    color: #f59e0b;
+}
+
+.log-entry.sync .log-type {
+    color: #ff6b6b;
+}
+
+.log-entry.error .log-type {
+    color: #ff6b6b;
+}
+
+.log-message {
+    color: #ccc;
+}
+
+.log-data {
+    width: 100%;
+    margin-top: 4px;
+    padding: 6px 8px;
+    background: #0a0a10;
+    border-radius: 4px;
+    color: #888;
+    font-size: 11px;
+    word-break: break-all;
+}

@@ -17,7 +17,7 @@ import {
   shallow
 } from '@/store/selectors/playbackSelectors';
 import { PLAYBACK_MODES, PLAYBACK_STATES } from '@/config/constants';
-import { getTimelineController } from '@/lib/core/TimelineControllerSingleton';
+import { AudioContextService } from '@/lib/services/AudioContextService';
 import EventBus from '@/lib/core/EventBus.js';
 
 export const PlaybackControls = () => {
@@ -73,26 +73,26 @@ export const PlaybackControls = () => {
   // =================== MAIN TRANSPORT CONTROLS ===================
 
   const TransportButtons = () => {
-    // ✅ UNIFIED TRANSPORT: Use TimelineController for consistent behavior
+    // ✅ UNIFIED TRANSPORT: Use TransportController for consistent behavior
     const handleUnifiedStop = async () => {
       // ✅ Stop recording if active
       EventBus.emit('transport:stop', {});
 
       try {
-        const timelineController = getTimelineController();
-        await timelineController.stop();
+        const transportController = AudioContextService.getTransportController();
+        transportController.stop();
       } catch (error) {
-        console.warn('TimelineController not available, using fallback:', error);
+        console.warn('TransportController not available, using fallback:', error);
         handleStop();
       }
     };
 
     const handleUnifiedPlayPause = async () => {
       try {
-        const timelineController = getTimelineController();
-        await timelineController.togglePlayPause();
+        const transportController = AudioContextService.getTransportController();
+        transportController.togglePlayPause();
       } catch (error) {
-        console.warn('TimelineController not available, using fallback:', error);
+        console.warn('TransportController not available, using fallback:', error);
         togglePlayPause();
       }
     };
@@ -103,8 +103,8 @@ export const PlaybackControls = () => {
         <button
           onClick={handleUnifiedStop}
           className={`p-2 rounded transition-colors ${playbackState === PLAYBACK_STATES.STOPPED
-              ? 'bg-orange-600 text-white shadow-lg'
-              : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
+            ? 'bg-orange-600 text-white shadow-lg'
+            : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
             }`}
           title="Stop"
         >
@@ -115,10 +115,10 @@ export const PlaybackControls = () => {
         <button
           onClick={handleUnifiedPlayPause}
           className={`p-3 rounded-lg transition-all duration-200 ${playbackState === PLAYBACK_STATES.PLAYING
-              ? 'bg-red-600 hover:bg-red-700 shadow-lg'
-              : playbackState === PLAYBACK_STATES.PAUSED
-                ? 'bg-yellow-600 hover:bg-yellow-700 shadow-lg'
-                : 'bg-green-600 hover:bg-green-700 shadow-lg'
+            ? 'bg-red-600 hover:bg-red-700 shadow-lg'
+            : playbackState === PLAYBACK_STATES.PAUSED
+              ? 'bg-yellow-600 hover:bg-yellow-700 shadow-lg'
+              : 'bg-green-600 hover:bg-green-700 shadow-lg'
             }`}
           title={
             playbackState === PLAYBACK_STATES.PLAYING
@@ -140,11 +140,14 @@ export const PlaybackControls = () => {
           <button
             onClick={() => {
               try {
-                const timelineController = getTimelineController();
-                const currentPosition = timelineController.getCurrentPosition();
+                const transportController = AudioContextService.getTransportController();
+                // Get current step directly from stored state or controller
+                const state = transportController.getState();
+                const currentPosition = state.currentStep;
+
                 const currentBar = Math.floor(currentPosition / 16);
                 const previousBarStep = Math.max(0, currentBar - 1) * 16;
-                timelineController.seekTo(previousBarStep);
+                transportController.jumpToStep(previousBarStep, { updateUI: true });
               } catch (error) {
                 const currentBar = Math.floor(transportPosition.split(':')[0]) || 1;
                 jumpToBar(Math.max(1, currentBar - 1));
@@ -158,11 +161,13 @@ export const PlaybackControls = () => {
           <button
             onClick={() => {
               try {
-                const timelineController = getTimelineController();
-                const currentPosition = timelineController.getCurrentPosition();
+                const transportController = AudioContextService.getTransportController();
+                const state = transportController.getState();
+                const currentPosition = state.currentStep;
+
                 const currentBar = Math.floor(currentPosition / 16);
                 const nextBarStep = (currentBar + 1) * 16;
-                timelineController.seekTo(nextBarStep);
+                transportController.jumpToStep(nextBarStep, { updateUI: true });
               } catch (error) {
                 const currentBar = Math.floor(transportPosition.split(':')[0]) || 1;
                 jumpToBar(currentBar + 1);
@@ -185,8 +190,8 @@ export const PlaybackControls = () => {
       <button
         onClick={() => setPlaybackMode(PLAYBACK_MODES.PATTERN)}
         className={`flex items-center space-x-2 px-3 py-2 rounded-md transition-all ${playbackMode === PLAYBACK_MODES.PATTERN
-            ? 'bg-blue-600 text-white shadow-md'
-            : 'text-gray-400 hover:text-white hover:bg-gray-700'
+          ? 'bg-blue-600 text-white shadow-md'
+          : 'text-gray-400 hover:text-white hover:bg-gray-700'
           }`}
         title="Pattern Mode - Play active pattern in loop"
       >
@@ -197,8 +202,8 @@ export const PlaybackControls = () => {
       <button
         onClick={() => setPlaybackMode(PLAYBACK_MODES.SONG)}
         className={`flex items-center space-x-2 px-3 py-2 rounded-md transition-all ${playbackMode === PLAYBACK_MODES.SONG
-            ? 'bg-purple-600 text-white shadow-md'
-            : 'text-gray-400 hover:text-white hover:bg-gray-700'
+          ? 'bg-purple-600 text-white shadow-md'
+          : 'text-gray-400 hover:text-white hover:bg-gray-700'
           }`}
         title="Song Mode - Play arrangement timeline"
       >
@@ -216,8 +221,8 @@ export const PlaybackControls = () => {
       <button
         onClick={() => setLoopEnabled(!loopEnabled)}
         className={`p-2 rounded transition-all ${loopEnabled
-            ? 'bg-yellow-600 text-white shadow-md'
-            : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+          ? 'bg-yellow-600 text-white shadow-md'
+          : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
           }`}
         title={loopEnabled ? 'Disable Loop' : 'Enable Loop'}
       >
@@ -228,8 +233,8 @@ export const PlaybackControls = () => {
       <button
         onClick={enableAutoLoop}
         className={`px-3 py-1 rounded text-xs transition-all ${isAutoLoop
-            ? 'bg-green-600 text-white'
-            : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+          ? 'bg-green-600 text-white'
+          : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
           }`}
         title="Auto-calculate loop points based on content"
       >
@@ -245,8 +250,8 @@ export const PlaybackControls = () => {
       <button
         onClick={() => setPlaybackRegion('full')}
         className={`px-2 py-1 rounded text-xs transition-all ${playbackRegion === 'full'
-            ? 'bg-blue-600 text-white'
-            : 'text-gray-400 hover:text-white hover:bg-gray-700'
+          ? 'bg-blue-600 text-white'
+          : 'text-gray-400 hover:text-white hover:bg-gray-700'
           }`}
         title="Play full content"
       >
@@ -256,8 +261,8 @@ export const PlaybackControls = () => {
       <button
         onClick={() => setPlaybackRegion('loop')}
         className={`px-2 py-1 rounded text-xs transition-all ${playbackRegion === 'loop'
-            ? 'bg-yellow-600 text-white'
-            : 'text-gray-400 hover:text-white hover:bg-gray-700'
+          ? 'bg-yellow-600 text-white'
+          : 'text-gray-400 hover:text-white hover:bg-gray-700'
           }`}
         title="Play loop range only"
       >
@@ -268,10 +273,10 @@ export const PlaybackControls = () => {
         onClick={() => setPlaybackRegion('selection')}
         disabled={!timelineSelection}
         className={`px-2 py-1 rounded text-xs transition-all ${playbackRegion === 'selection'
-            ? 'bg-purple-600 text-white'
-            : timelineSelection
-              ? 'text-gray-400 hover:text-white hover:bg-gray-700'
-              : 'text-gray-600 cursor-not-allowed'
+          ? 'bg-purple-600 text-white'
+          : timelineSelection
+            ? 'text-gray-400 hover:text-white hover:bg-gray-700'
+            : 'text-gray-600 cursor-not-allowed'
           }`}
         title="Play timeline selection"
       >
@@ -479,11 +484,11 @@ export const TimelineRuler = ({
             >
               {/* Step marker */}
               <div className={`h-full flex items-end ${isBarStart ? 'justify-center' :
-                  isBeatStart ? 'justify-center' : 'justify-end'
+                isBeatStart ? 'justify-center' : 'justify-end'
                 }`}>
                 <div className={`${isBarStart ? 'w-0.5 h-6 bg-gray-400' :
-                    isBeatStart ? 'w-0.5 h-4 bg-gray-500' :
-                      'w-0.5 h-2 bg-gray-600'
+                  isBeatStart ? 'w-0.5 h-4 bg-gray-500' :
+                    'w-0.5 h-2 bg-gray-600'
                   }`} />
               </div>
             </div>

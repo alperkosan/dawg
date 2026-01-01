@@ -49,10 +49,10 @@ export class PlaybackFacade {
 
     /**
      * Start playback
-     * @param {number} startStep - Starting step position
+     * @param {number} startStep - Starting step position (null = use current position)
      * @returns {Promise<void>}
      */
-    async play(startStep = 0) {
+    async play(startStep = null) {
         return this._playbackService.play(startStep);
     }
 

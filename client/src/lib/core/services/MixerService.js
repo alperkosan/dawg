@@ -146,6 +146,40 @@ export class MixerService {
     }
 
     /**
+     * Create a send from one track to another
+     * @param {string} trackId - Source track ID
+     * @param {string} busId - Destination bus ID
+     * @param {number} level - Send level (0-1)
+     * @param {boolean} preFader - Pre-fader send
+     */
+    createSend(trackId, busId, level = 0.5, preFader = false) {
+        const sourceInsert = this.mixerInserts.get(trackId);
+        const destinationInsert = this.mixerInserts.get(busId);
+
+        if (!sourceInsert) {
+            logger.warn(NAMESPACES.AUDIO, `Cannot create send: Source track ${trackId} not found`);
+            return false;
+        }
+
+        if (!destinationInsert) {
+            logger.warn(NAMESPACES.AUDIO, `Cannot create send: Destination bus ${busId} not found`);
+            return false;
+        }
+
+        // Use source insert's addSend method
+        // Note: MixerInsert.addSend expects (busId, busInput, level)
+        // We pass destination insert's input as the destination node
+        try {
+            sourceInsert.addSend(busId, destinationInsert.input, level);
+            logger.debug(NAMESPACES.AUDIO, `Created send: ${trackId} → ${busId} (level: ${level})`);
+            return true;
+        } catch (error) {
+            logger.error(NAMESPACES.AUDIO, `Failed to create send ${trackId} → ${busId}:`, error);
+            return false;
+        }
+    }
+
+    /**
      * Route an instrument to a mixer insert
      * @param {string} instrumentId 
      * @param {string} insertId 
@@ -173,8 +207,8 @@ export class MixerService {
                 // May not be connected
             }
 
-            // Route to WASM mixer if enabled
-            if (this.useWasmMixer && this.unifiedMixer) {
+            // Route to WASM mixer if enabled AND healthy (not in fallback)
+            if (this.useWasmMixer && this.unifiedMixer && !this.unifiedMixer.isFallback) {
                 const chIdx = this.channelAllocator.get(insertId);
                 if (chIdx !== undefined) {
                     // Use UnifiedMixerNode's connectToChannel directly

@@ -1387,6 +1387,8 @@ export class PlaybackManager {
     async _schedulePatternContent(baseTime, options = {}) {
         const { instrumentFilterSet = null, reason = 'manual' } = options;
 
+        console.log(`🎵 [_schedulePatternContent] CALLED: baseTime=${baseTime?.toFixed(3)}, reason=${reason}, options=${JSON.stringify(options)}`);
+
         // ✅ OPTIMIZED: Simplified position handling without excessive logging
         const isResume = reason === 'resume';
         const isNoteModified = reason === 'note-modified';
@@ -1402,8 +1404,11 @@ export class PlaybackManager {
         const activePattern = arrangementStore.patterns[arrangementStore.activePatternId];
 
         if (!activePattern) {
+            console.warn(`⚠️ [_schedulePatternContent] No active pattern found!`);
             return { totalNotes: 0, instrumentCount: 0 };
         }
+
+        console.log(`🎵 [_schedulePatternContent] Active pattern: ${arrangementStore.activePatternId}, instruments=${Object.keys(activePattern.data || {}).length}`);
 
         // ✅ OPTIMIZED: Schedule notes without verbose logging
         const patternData = activePattern.data || {};
@@ -2414,6 +2419,9 @@ export class PlaybackManager {
 
             const hasExtendedParams = Object.keys(extendedParams).length > 0;
 
+            // ✅ DEBUG: Log ALL note scheduling
+            console.log(`📅 PlaybackManager: Scheduling note for ${instrumentId}, pitch=${note.pitch || 'C4'}, absTime=${absoluteTime.toFixed(3)}, dur=${noteDuration.toFixed(3)}, delay=${(absoluteTime - this.transport.audioContext.currentTime).toFixed(3)}s`);
+
             // ✅ SCHEDULE OPT: Note on event with noteId for cancellation tracking
             // ✅ DEBUG: Log scheduling for VASynth
             if (instrumentId === 'pluck' || instrument?.type === 'vasynth') {
@@ -2431,6 +2439,8 @@ export class PlaybackManager {
                 absoluteTime,
                 (scheduledTime) => {
                     try {
+                        console.log(`🎵 PlaybackManager: Triggering note for ${instrumentId}, pitch=${note.pitch || 'C4'}, vel=${note.velocity || 1}, time=${scheduledTime.toFixed(3)}, dur=${noteDuration?.toFixed(3)}s`);
+
                         if (instrumentId === 'pluck' || instrument?.type === 'vasynth') {
                             console.log(`🔊 VASynth note event triggered:`, {
                                 instrumentId,

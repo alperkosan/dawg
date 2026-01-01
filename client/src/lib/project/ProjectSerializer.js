@@ -515,9 +515,8 @@ export class ProjectSerializer {
           // ProjectBufferManager checks cache first, only loads if needed
           const buffer = await bufferManager.getBuffer(url, engine.audioContext);
 
-          // Also add to SampleLoader cache for compatibility
-          const { SampleLoader } = await import('../audio/instruments/loaders/SampleLoader.js');
-          SampleLoader.cache.set(url, buffer);
+          // ✅ FIX: SampleLoader.cache no longer exists - SampleLoader now uses AudioBufferPool internally
+          // ProjectBufferManager already handles caching via AudioBufferPool, no need to manually cache
 
           return buffer;
         } catch (error) {

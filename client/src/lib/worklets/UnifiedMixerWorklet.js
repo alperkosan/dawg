@@ -66,6 +66,10 @@ class UnifiedMixerWorklet extends AudioWorkletProcessor {
                 this.initializeWasm(data.wasmPath);
                 break;
 
+            case 'set-shared-state':
+                this.setSharedState(data.sharedState);
+                break;
+
             case 'set-channel-params':
                 this.updateChannelParams(data);
                 break;
@@ -95,6 +99,13 @@ class UnifiedMixerWorklet extends AudioWorkletProcessor {
             await wasmModule.default();
 
             this.wasmProcessor = new wasmModule.UnifiedMixerProcessor(this.sampleRate, this.numChannels);
+
+            // Apply pending shared state if available
+            if (this.pendingSharedState) {
+                this.setSharedState(this.pendingSharedState);
+                this.pendingSharedState = null;
+            }
+
             this.isInitialized = true;
 
             this.port.postMessage({
@@ -110,6 +121,30 @@ class UnifiedMixerWorklet extends AudioWorkletProcessor {
                 success: false,
                 error: error.message
             });
+        }
+    }
+
+    /**
+     * Set shared state buffer for transport sync
+     */
+    setSharedState(sharedArrayBuffer) {
+        if (!sharedArrayBuffer) {
+            console.warn('⚠️ UnifiedMixerWorklet: No SharedArrayBuffer provided');
+            return;
+        }
+
+        // Create Float32Array view of the SharedArrayBuffer
+        const sharedFloat = new Float32Array(sharedArrayBuffer);
+
+        // Pass pointer to WASM processor
+        if (this.isInitialized && this.wasmProcessor) {
+            // WASM expects a raw pointer to the Float32Array
+            this.wasmProcessor.set_shared_state_buffer(sharedFloat);
+            console.log('✅ UnifiedMixerWorklet: SharedArrayBuffer linked to WASM');
+        } else {
+            // Store for later initialization
+            this.pendingSharedState = sharedArrayBuffer;
+            console.log('⏳ UnifiedMixerWorklet: SharedArrayBuffer stored, waiting for WASM init');
         }
     }
 
@@ -234,13 +269,15 @@ class UnifiedMixerWorklet extends AudioWorkletProcessor {
             }
         }
 
-        // ⚡ STEP 2: Process all channels in single WASM call (MAGIC!)
+        // ⚡ STEP 2: Process all channels in single WASM call
+        // WASM signature: process_mix(interleaved_ptr, input_len, out_l_ptr, out_r_ptr, block_size)
+        const inputLen = this.numChannels * 2 * blockSize; // Total interleaved samples
         this.wasmProcessor.process_mix(
             this.interleavedInputs,
+            inputLen,
             this.outputL,
             this.outputR,
-            blockSize,
-            this.numChannels
+            blockSize
         );
 
         // ⚡ STEP 3: Copy to output

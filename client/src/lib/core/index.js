@@ -18,9 +18,7 @@ export { TimelineController } from './TimelineController.js';
 export { TransportManager } from './TransportManager.js';
 
 // Singleton Wrappers
-export { default as PlaybackControllerSingleton } from './PlaybackControllerSingleton.js';
-export { default as TimelineControllerSingleton } from './TimelineControllerSingleton.js';
-export { default as TransportManagerSingleton } from './TransportManagerSingleton.js';
+
 
 // Services
 export {

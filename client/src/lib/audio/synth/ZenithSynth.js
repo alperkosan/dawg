@@ -235,10 +235,14 @@ export class ZenithSynth {
 
         // Polyphonic mode or first note
         if (isInCleanupPhase) {
+            if (import.meta.env.DEV) console.log(`🎹 ZenithSynth: In cleanup phase, performing cleanup before new note.`);
             this.cleanup();
         } else if (this.isPlaying) {
+            if (import.meta.env.DEV) console.log(`🎹 ZenithSynth: Polyphonic mode, stopping previous note before new note.`);
             this.noteOff(time);
             this._cancelCleanupTimer();
+        } else {
+            if (import.meta.env.DEV) console.log(`🎹 ZenithSynth: First note or polyphonic mode, creating new voice.`);
         }
 
         this.currentNote = midiNote;
@@ -247,10 +251,15 @@ export class ZenithSynth {
 
         // Create oscillators
         this.oscillatorSettings.forEach((settings, i) => {
-            if (!settings.enabled) return;
+            if (!settings.enabled) {
+                if (import.meta.env.DEV) console.log(`🎹 ZenithSynth: Oscillator ${i} disabled.`);
+                return;
+            }
 
             const octaveMultiplier = Math.pow(2, settings.octave);
             const frequency = baseFrequency * octaveMultiplier;
+
+            if (import.meta.env.DEV) console.log(`🎹 ZenithSynth: Creating oscillator ${i} (waveform: ${settings.waveform}, freq: ${frequency.toFixed(2)} Hz, detune: ${settings.detune}).`);
 
             // PWM (Pulse Width Modulation)
             if (settings.waveform === 'square' && settings.pulseWidth !== undefined && settings.pulseWidth !== 0.5) {
@@ -342,6 +351,7 @@ export class ZenithSynth {
                 this.oscillatorGains[i] = oscGain;
             }
         });
+        if (import.meta.env.DEV) console.log(`🎹 ZenithSynth: All oscillators created.`);
 
         // Create filter
         this.filter = this.context.createBiquadFilter();
@@ -385,6 +395,7 @@ export class ZenithSynth {
 
         this.filter.connect(this.amplitudeGain);
         this.amplitudeGain.connect(this.masterGain);
+        if (import.meta.env.DEV) console.log(`🎹 ZenithSynth: Final connections made: Filter -> AmplitudeGain -> MasterGain.`);
 
         // Trigger envelopes
         const filterEnvAmount = this.filterSettings.envelopeAmount;

@@ -4,13 +4,13 @@
  * Browse, upload, download, and rate presets for all instruments and effects
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, memo } from 'react';
 import { X, Search, Download, Star, TrendingUp, Sparkles, Filter, User } from 'lucide-react';
 import { usePanelsStore } from '../../store/usePanelsStore';
 import PresetBrowser from './components/PresetBrowser';
 import './PresetLibraryPanel.css';
 
-export default function PresetLibraryPanel() {
+const PresetLibraryPanel = memo(function PresetLibraryPanel() {
     // Get state directly from store
     const isOpen = usePanelsStore(state => state.isPresetLibraryOpen);
     const setPresetLibraryOpen = usePanelsStore(state => state.setPresetLibraryOpen);
@@ -30,8 +30,6 @@ export default function PresetLibraryPanel() {
         setSearchQuery('');
     }, [activeTab]);
 
-    console.log('🎨 PresetLibraryPanel render - isOpen:', isOpen);
-    if (!isOpen) return null;
 
     const handleFilterChange = (key, value) => {
         setFilters(prev => ({
@@ -144,4 +142,5 @@ export default function PresetLibraryPanel() {
             </div>
         </>
     );
-}
+});
+export default PresetLibraryPanel;

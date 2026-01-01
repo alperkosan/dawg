@@ -4,29 +4,32 @@ import { PLAYBACK_MODES, PLAYBACK_STATES } from '@/config/constants';
 import { usePreviewPlayerStore } from './usePreviewPlayerStore.js';
 import { storeManager } from './StoreManager';
 import { calculatePatternLoopLength, calculateArrangementLoopLength } from '@/lib/utils/patternUtils.js';
-// ✅ Empty project - no initial settings
-import PlaybackControllerSingleton from '@/lib/core/PlaybackControllerSingleton.js';
+// ✅ PHASE 2: Migrated to TransportController (unified singleton)
+import { AudioContextService } from '@/lib/services/AudioContextService';
 
 /**
  * UNIFIED PLAYBACK STORE
  *
- * This store integrates with PlaybackController singleton for centralized state management.
+ * This store integrates with TransportController for centralized state management.
  *
  * Architecture:
- * - PlaybackController: Core playback logic and state (single source of truth)
+ * - TransportController: Core playback logic and state (single source of truth) ✅ PHASE 2
  * - usePlaybackStore: React/Zustand binding layer (UI state reflection)
- * - PlaybackManager: Audio scheduling and note management
+ * - NativeTransportSystem: Audio scheduling and timing
  *
  * Migration History:
  * - V1 (deprecated): Direct AudioContextService access
- * - V2 (migrated 2025-10-10): PlaybackController singleton integration
+ * - V2 (2025-10-10): PlaybackController singleton integration
+ * - V3 (2025-12-27): TransportController unified singleton ✅ PHASE 2
  *
- * @see PlaybackController.js for core implementation
- * @see PlaybackControllerSingleton.js for singleton pattern
+ * @see TransportController.js for core implementation
  */
 
 export const usePlaybackStore = create((set, get) => ({
   // =============== STATE ===============
+  // ✅ UNIFIED TRANSPORT: These are UI reflection states
+  // The actual source of truth is SharedArrayBuffer via TransportController
+  // These local states exist for React reactivity but are synced from controller
   isPlaying: false,
   playbackState: PLAYBACK_STATES.STOPPED,
   playbackMode: PLAYBACK_MODES.PATTERN,
@@ -56,68 +59,120 @@ export const usePlaybackStore = create((set, get) => ({
     if (state._isInitialized) return state._controller;
 
     try {
-      const controller = await PlaybackControllerSingleton.getInstance();
-      if (!controller) return null;
+      // ✅ PHASE 2: Use TransportController
+      const controller = AudioContextService.getTransportController();
+      if (!controller) {
+        console.warn('⚠️ TransportController not yet initialized');
+        return null;
+      }
 
-      const unsubscribe = controller.subscribe((data) => {
+      const unsubscribe = controller.subscribe((controllerState) => {
         const currentState = get();
+        // ✅ UNIFIED TRANSPORT: Sync UI state from controller (which reads from SAB)
+        // ✅ FIX: Check isPaused FIRST, because when paused, isPlaying is false
+        // SAB states: 0=stopped, 1=playing, 2=paused
+        // isPaused=true means SAB state is 2, not 0
+        let computedPlaybackState;
+        if (controllerState.isPaused) {
+          computedPlaybackState = PLAYBACK_STATES.PAUSED;
+        } else if (controllerState.isPlaying) {
+          computedPlaybackState = PLAYBACK_STATES.PLAYING;
+        } else {
+          computedPlaybackState = PLAYBACK_STATES.STOPPED;
+        }
+
         const updates = {
-          isPlaying: data.state.isPlaying,
-          playbackState: data.state.playbackState,
-          currentStep: data.state.currentPosition,
-          loopEnabled: data.state.loopEnabled,
-          loopStartStep: data.state.loopStart,
-          loopEndStep: data.state.loopEnd
+          isPlaying: controllerState.isPlaying,
+          playbackState: computedPlaybackState,
+          currentStep: controllerState.currentStep,
+          loopEnabled: controllerState.loopEnabled,
+          loopStartStep: controllerState.loopStart,
+          loopEndStep: controllerState.loopEnd
         };
 
-        if (data.type !== 'init' && data.state.bpm !== currentState.bpm) {
-          console.log('🎵 BPM changed from controller:', currentState.bpm, '→', data.state.bpm);
-          updates.bpm = data.state.bpm;
+        if (controllerState.bpm !== currentState.bpm) {
+          console.log('🎵 BPM changed from controller:', currentState.bpm, '→', controllerState.bpm);
+          updates.bpm = controllerState.bpm;
         }
 
         set(updates);
       });
 
+      // ✅ Subscribe to tick events for position updates
       let lastPositionUpdate = 0;
-      const POSITION_UPDATE_INTERVAL = 100; // ✅ 10 FPS - sufficient for visual feedback (was 30 FPS)
+      const POSITION_UPDATE_INTERVAL = 100; // 10 FPS
 
-      // ✅ Use RAF for frame-synced updates
       let rafId = null;
       let pendingPosition = null;
 
-      controller.on('position-update', (data) => {
+      const handleTick = (data) => {
         pendingPosition = data;
 
-        // Batch multiple position events into single RAF update
         if (!rafId) {
           rafId = requestAnimationFrame((timestamp) => {
             if (pendingPosition && timestamp - lastPositionUpdate >= POSITION_UPDATE_INTERVAL) {
-              // ✅ Always update currentStep - components decide whether to use it based on mode
-              // Store now includes mode information for filtering at component level
               set({
-                currentStep: pendingPosition.position,
-                _currentPositionMode: pendingPosition.mode // Track which mode this position is for
+                currentStep: pendingPosition.step || controller.getCurrentStep(),
+                _currentPositionMode: 'pattern' // Default mode
               });
               lastPositionUpdate = timestamp;
             }
             rafId = null;
           });
         }
-      });
+      };
 
-      controller.on('ghost-position-change', (position) => {
+      // Subscribe via EventBus
+      const EventBus = (await import('@/lib/core/EventBus')).default;
+      EventBus.on('transport:tick', handleTick);
+
+      // Track ghost position
+      EventBus.on('transport:ghostPosition', ({ position }) => {
         set({ ghostPosition: position });
       });
+
+      // ✅ Fix: Listen to position changes (seeking while stopped)
+      EventBus.on('transport:positionChanged', ({ step }) => {
+        set({
+          currentStep: step,
+          transportStep: step,
+          // Update string format? transportPosition: '...'
+        });
+      });
+
+      // ✅ CRITICAL: Recalculate loop length when notes change
+      // This ensures the loop range adapts dynamically as the user adds/removes notes
+      const handlePatternChange = () => {
+        // Use a small timeout to ensure store updates have propagated
+        // (though synchronous updates usually don't need this, it assumes storeManager is up to date)
+        setTimeout(() => {
+          get().updateLoopLength();
+        }, 0);
+      };
+
+      EventBus.on('NOTE_ADDED', handlePatternChange);
+      EventBus.on('NOTE_REMOVED', handlePatternChange);
 
       set({
         _controller: controller,
         _isInitialized: true,
-        _unsubscribe: unsubscribe
+        _unsubscribe: () => {
+          unsubscribe();
+          EventBus.off('transport:tick', handleTick);
+          EventBus.off('transport:ghostPosition');
+          EventBus.off('transport:positionChanged');
+          EventBus.off('NOTE_ADDED', handlePatternChange);
+          EventBus.off('NOTE_REMOVED', handlePatternChange);
+        }
       });
+
+      // ✅ FIX: Calculate initial loop length once controller is ready
+      // This ensures on page load/reload the loop is correct even before any interaction
+      get().updateLoopLength();
 
       return controller;
     } catch (error) {
-      console.error('Failed to initialize PlaybackController in store:', error);
+      console.error('Failed to initialize TransportController in store:', error);
       return null;
     }
   },
@@ -255,11 +310,10 @@ export const usePlaybackStore = create((set, get) => ({
           const { activePatternId, patterns } = arrangementState;
           const activePattern = patterns?.[activePatternId];
           if (activePattern) {
-            if (typeof activePattern.length === 'number') {
-              nextLength = activePattern.length;
-            } else {
-              nextLength = calculatePatternLoopLength(activePattern);
-            }
+            // ✅ FIX: Always calculate loop length dynamically based on content
+            // This ensures the loop adapts to the actual notes (e.g. 16 steps)
+            // instead of using the default fixed length (usually 64)
+            nextLength = calculatePatternLoopLength(activePattern);
           }
         } else {
           const arrangementClips = arrangementState.clips || [];
@@ -309,19 +363,15 @@ export const usePlaybackStore = create((set, get) => ({
   },
 
   // =============== UTILITY ===============
-  getController: async () => {
-    try {
-      return await PlaybackControllerSingleton.getInstance();
-    } catch (error) {
-      console.error('Failed to get controller:', error);
-      return null;
-    }
+  getController: () => {
+    // ✅ PHASE 2: Return TransportController directly (synchronous)
+    return AudioContextService.getTransportController();
   },
 
   destroy: () => {
     const { _controller, _unsubscribe } = get();
     if (_unsubscribe) _unsubscribe();
-    if (_controller) _controller.destroy();
+    // TransportController is managed by AudioContextService, don't destroy it
     set({ _controller: null, _isInitialized: false });
   }
 }));

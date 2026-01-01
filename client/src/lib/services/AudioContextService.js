@@ -16,6 +16,9 @@ import { EffectService } from './EffectService';
 import { InstrumentService } from './InstrumentService';
 import { AudioAnalysisService } from './AudioAnalysisService';
 
+// ✅ PHASE 2: Unified TransportController
+import { initializeTransportController, getTransportController } from '../core/TransportController';
+
 export class AudioContextService {
   static instance = null;
   static audioEngine = null;
@@ -23,6 +26,7 @@ export class AudioContextService {
   static pendingMixerSync = false;
 
   static _idleManager = null;
+  static _transportController = null; // ✅ PHASE 2: TransportController instance
 
   // =================== INTERFACE LAYER DELEGATION ===================
   // Delegates to InterfaceService for backward compatibility and clean access
@@ -53,6 +57,11 @@ export class AudioContextService {
     return this.audioEngine?.audioContext;
   }
 
+  // ✅ PHASE 2: Get TransportController instance
+  static getTransportController() {
+    return this._transportController || getTransportController();
+  }
+
   static async setAudioEngine(engine) {
     const isNewEngine = this.audioEngine !== engine;
     this.audioEngine = engine;
@@ -77,6 +86,10 @@ export class AudioContextService {
       this._idleManager.dispose();
     }
     this._idleManager = new IdleOptimizationManager(engine);
+
+    // ✅ PHASE 2: Initialize Unified TransportController
+    this._transportController = initializeTransportController(engine);
+    console.log('🎮 TransportController initialized and linked to audio engine');
 
     // Ensure AudioContext is resumed
     if (engine?.audioContext && engine.audioContext.state === 'suspended') {
@@ -566,6 +579,13 @@ export class AudioContextService {
       this._idleManager.dispose();
       this._idleManager = null;
     }
+
+    // ✅ PHASE 2: Dispose TransportController
+    if (this._transportController) {
+      this._transportController.dispose();
+      this._transportController = null;
+    }
+
     this.audioEngine = null;
     this.pendingMixerSync = false;
     AudioAnalysisService.getInstance().stop();

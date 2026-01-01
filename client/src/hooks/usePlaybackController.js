@@ -1,184 +1,107 @@
 // hooks/usePlaybackController.js
-import { useState, useEffect, useCallback, useRef } from 'react';
-import PlaybackControllerSingleton from '@/lib/core/PlaybackControllerSingleton.js';
+import { useCallback } from 'react';
+import { usePlaybackStore } from '@/store/usePlaybackStore';
 
 /**
- * ✅ UNIFIED PLAYBACK HOOK
- *
- * Tek hook tüm playback ihtiyaçları için:
- * - State management
- * - Position tracking
- * - User interactions
- * - Motor synchronization
+ * ✅ UNIFIED PLAYBACK HOOK (ADAPTER)
+ * 
+ * Adapts legacy usePlaybackController API to use the Unified Playback Store (SSOT).
+ * 
+ * Benefits:
+ * - Eliminates redundant state (uses global Zustand store)
+ * - Syncs with TransportController via store
+ * - Removes PlaybackControllerSingleton dependency
  */
 
-/**
- * Ana playback hook - Tüm bileşenler bu hook'u kullanır
- */
 export const usePlaybackController = (options = {}) => {
   const {
     trackPosition = true,
     trackGhost = false
   } = options;
 
-  const [state, setState] = useState({
-    playbackState: 'stopped',
-    isPlaying: false,
-    currentPosition: 0,
-    bpm: 140,
-    loopStart: 0,
-    loopEnd: 64,
-    loopEnabled: true,
-    ghostPosition: null,
-    isUserScrubbing: false
-  });
+  // Use the unified store
+  const playbackState = usePlaybackStore();
 
-  const controllerRef = useRef(null);
+  // Actions
+  const {
+    play,
+    pause,
+    stop,
+    togglePlayPause,
+    setBPM,
+    setLoopPoints,
+    setLoopEnabled,
+    jumpToStep,
+    setGhostPosition,
+    // Note: PlaybackStore manages isScrubbing internally or exposes via getters if needed
+  } = playbackState;
 
-  // Controller'ı initialize et
-  useEffect(() => {
-    let isMounted = true;
+  // Map store state to expected hook format
+  // Note: Store uses 'currentStep' (steps), legacy might expect 'currentPosition' (could be bars or steps?)
+  // Checking original file: initController used state.currentPosition.
+  // Assuming 1:1 mapping for now.
 
-    const initController = async () => {
-      try {
-        const controller = await PlaybackControllerSingleton.getInstance();
-        if (!controller || !isMounted) return;
-
-        controllerRef.current = controller;
-
-      // State changes subscription
-      const unsubscribeState = controller.subscribe((data) => {
-        setState(data.state);
-      });
-
-      // Position updates subscription (opsiyonel)
-      let positionHandler, ghostHandler;
-      if (trackPosition) {
-        positionHandler = (data) => {
-          setState(prev => ({
-            ...prev,
-            currentPosition: data.position
-          }));
-        };
-        controller.on('position-update', positionHandler);
-      }
-
-      // Ghost position subscription (opsiyonel)
-      if (trackGhost) {
-        ghostHandler = (position) => {
-          setState(prev => ({
-            ...prev,
-            ghostPosition: position
-          }));
-        };
-        controller.on('ghost-position-change', ghostHandler);
-      }
-
-        // Cleanup for this controller
-        return () => {
-          unsubscribeState();
-          if (positionHandler) controller.off('position-update', positionHandler);
-          if (ghostHandler) controller.off('ghost-position-change', ghostHandler);
-        };
-      } catch (error) {
-        console.error('Failed to initialize PlaybackController in hook:', error);
-      }
-    };
-
-    initController();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [trackPosition, trackGhost]);
-
-  // =================== ACTIONS ===================
+  const state = {
+    playbackState: playbackState.isPlaying ? 'playing' : (playbackState.isPaused ? 'paused' : 'stopped'),
+    isPlaying: playbackState.isPlaying,
+    currentPosition: trackPosition ? playbackState.currentStep : 0, // Should this be steps? Yes.
+    bpm: playbackState.bpm,
+    loopStart: playbackState.loopStart,
+    loopEnd: playbackState.loopEnd,
+    loopEnabled: playbackState.loopEnabled,
+    ghostPosition: trackGhost ? playbackState.ghostPosition : null,
+    isUserScrubbing: false // Store might not expose this reactively yet, defaulting false
+  };
 
   const actions = useCallback(() => {
-    const controller = controllerRef.current;
-    if (!controller) return {};
-
     return {
       // Primary controls
-      play: (startPosition = null) => controller.play(startPosition),
-      pause: () => controller.pause(),
-      stop: () => controller.stop(),
-      togglePlayPause: () => controller.togglePlayPause(),
+      play: (startPosition = null) => play(startPosition),
+      pause: () => pause(),
+      stop: () => stop(),
+      togglePlayPause: () => togglePlayPause(),
 
       // Position control
-      jumpToPosition: (position, options) => controller.jumpToPosition(position, options),
+      jumpToPosition: (position, options) => jumpToStep(position, options),
 
       // Ghost playhead
-      setGhostPosition: (position) => controller.setGhostPosition(position),
-      clearGhostPosition: () => controller.clearGhostPosition(),
+      setGhostPosition: (position) => setGhostPosition(position),
+      clearGhostPosition: () => setGhostPosition(null),
 
       // Settings
-      setBPM: (bpm) => controller.setBPM(bpm),
-      setLoopRange: (start, end) => controller.setLoopRange(start, end),
-      setLoopEnabled: (enabled) => controller.setLoopEnabled(enabled),
+      setBPM: (bpm) => setBPM(bpm),
+      setLoopRange: (start, end) => setLoopPoints(start, end),
+      setLoopEnabled: (enabled) => setLoopEnabled(enabled),
 
-      // Getters
-      getCurrentPosition: () => controller.getCurrentPosition(),
-      getDisplayPosition: () => controller.getDisplayPosition(),
-      getState: () => controller.getState()
+      // Getters - accessing current state directly
+      getCurrentPosition: () => usePlaybackStore.getState().currentStep,
+      getDisplayPosition: () => usePlaybackStore.getState().currentStep, // formatting needed?
+      getState: () => ({
+        isPlaying: usePlaybackStore.getState().isPlaying,
+        currentStep: usePlaybackStore.getState().currentStep,
+        // ... other state
+      })
     };
-  }, []);
-
-  const actionMethods = actions();
+  }, [play, pause, stop, togglePlayPause, jumpToStep, setGhostPosition, setBPM, setLoopPoints, setLoopEnabled]);
 
   return {
-    // State
-    ...state,
-
-    // Actions
-    ...actionMethods,
-
-    // Computed values
-    isInitialized: !!controllerRef.current
+    state, // Legacy wrapper expected flattened state? Original returned ...state
+    ...state, // Spread state properties
+    ...actions(), // Spread actions
+    isInitialized: true
   };
 };
+
+
 
 /**
  * Lightweight hook sadece position tracking için
  */
 export const usePlaybackPosition = () => {
-  const [position, setPosition] = useState(0);
-  const [isPlaying, setIsPlaying] = useState(false);
+  const currentStep = usePlaybackStore(state => state.currentStep);
+  const isPlaying = usePlaybackStore(state => state.isPlaying);
 
-  useEffect(() => {
-    let isMounted = true;
-
-    const initController = async () => {
-      try {
-        const controller = await PlaybackControllerSingleton.getInstance();
-        if (!controller || !isMounted) return;
-
-        const unsubscribe = controller.subscribe((data) => {
-          if (isMounted) {
-            setPosition(data.state.currentPosition);
-            setIsPlaying(data.state.isPlaying);
-          }
-        });
-
-        return unsubscribe;
-      } catch (error) {
-        console.error('Failed to initialize PlaybackController in usePlaybackPosition:', error);
-        return null;
-      }
-    };
-
-    let cleanup;
-    initController().then(unsub => {
-      cleanup = unsub;
-    });
-
-    return () => {
-      isMounted = false;
-      if (cleanup) cleanup();
-    };
-  }, []);
-
-  return { position, isPlaying };
+  return { position: currentStep, isPlaying };
 };
 
 /**

@@ -286,33 +286,17 @@ export class NativeAudioEngineFacade {
     // =================== PRIVATE INITIALIZATION ===================
 
     async _setupMasterAudioChain() {
-        // Create master bus nodes
-        this.masterBusInput = this.audioContext.createGain();
-        this.masterBusInput.gain.value = 1.0;
+        // ✅ DELEGATION: Let MixerService handle master bus creation to ensure consistency
+        // This ensures MixerInsert('master') is created and registered correctly
+        await this.mixerService.initializeMasterBus();
 
-        this.masterBusGain = this.audioContext.createGain();
-        this.masterBusGain.gain.value = 1.0;
+        // Sync local references from MixerService
+        this.masterBusInput = this.mixerService.masterBusInput;
+        this.masterBusGain = this.mixerService.masterBusGain;
+        this.masterGain = this.mixerService.masterGain;
+        this.masterAnalyzer = this.mixerService.masterAnalyzer;
 
-        this.masterGain = this.audioContext.createGain();
-        this.masterGain.gain.value = 0.8;
-
-        this.masterAnalyzer = this.audioContext.createAnalyser();
-        this.masterAnalyzer.fftSize = 256;
-        this.masterAnalyzer.smoothingTimeConstant = 0.8;
-
-        // Routing
-        this.masterBusInput.connect(this.masterBusGain);
-        this.masterBusGain.connect(this.masterGain);
-        this.masterGain.connect(this.masterAnalyzer);
-        this.masterAnalyzer.connect(this.audioContext.destination);
-
-        // Sync to MixerService
-        this.mixerService.masterBusInput = this.masterBusInput;
-        this.mixerService.masterBusGain = this.masterBusGain;
-        this.mixerService.masterGain = this.masterGain;
-        this.mixerService.masterAnalyzer = this.masterAnalyzer;
-
-        logger.debug(NAMESPACES.AUDIO, 'Master audio chain ready');
+        logger.info(NAMESPACES.AUDIO, 'Master audio chain setup delegated to MixerService');
     }
 
     async _initializeWasmMixer() {
@@ -504,6 +488,10 @@ export class NativeAudioEngineFacade {
         return this.mixerService.removeMixerInsert(insertId);
     }
 
+    createSend(trackId, busId, level = 0.5, preFader = false) {
+        return this.mixerService.createSend(trackId, busId, level, preFader);
+    }
+
     routeInstrumentToInsert(instrumentId, insertId) {
         return this.mixerService.routeInstrumentToInsert(instrumentId, insertId);
     }
@@ -579,6 +567,89 @@ export class NativeAudioEngineFacade {
             const schedulerService = this.playbackFacade.getSchedulerService();
             schedulerService?._scheduleContent?.(null, 'pattern-schedule', false);
         }
+    }
+
+    // =================== AUDIO QUALITY SETTINGS ===================
+
+    /**
+     * Apply audio quality settings from the Audio Quality Settings panel
+     * Delegates to transport and instruments for timing/polyphony updates
+     * @param {Object} settings - Settings from AudioQualityManager
+     * @returns {Object} Result with success flag
+     */
+    applyQualitySettings(settings) {
+        if (!this.isInitialized) {
+            logger.warn(NAMESPACES.AUDIO, 'Cannot apply quality settings: engine not initialized');
+            return { success: false, error: 'Engine not initialized' };
+        }
+
+        logger.info(NAMESPACES.AUDIO, '🎛️ Applying audio quality settings:', settings);
+
+        try {
+            // ✅ Apply PPQ to transport
+            if (settings.ppq && this.transport) {
+                this.transport.ppq = settings.ppq;
+                this.transport.ticksPerStep = settings.ppq / 4;
+                this.transport.ticksPerBar = settings.ppq * this.transport.timeSignature[0];
+                logger.info(NAMESPACES.AUDIO, `PPQ updated to ${settings.ppq}`);
+            }
+
+            // ✅ Apply Lookahead Time
+            if (settings.lookaheadTime && this.transport) {
+                this.transport.lookAhead = settings.lookaheadTime * 1000;
+                logger.info(NAMESPACES.AUDIO, `Lookahead updated to ${settings.lookaheadTime * 1000}ms`);
+            }
+
+            // ✅ Apply Schedule Ahead Time
+            if (settings.scheduleAheadTime && this.transport) {
+                this.transport.scheduleAheadTime = settings.scheduleAheadTime;
+                logger.info(NAMESPACES.AUDIO, `Schedule ahead time updated to ${settings.scheduleAheadTime * 1000}ms`);
+            }
+
+            // ✅ Apply Sync Interval
+            if (settings.syncInterval) {
+                this._qualitySyncInterval = settings.syncInterval;
+                logger.info(NAMESPACES.AUDIO, `Sync interval set to ${settings.syncInterval}ms`);
+            }
+
+            // ✅ Apply Max Polyphony
+            if (settings.maxPolyphony) {
+                this.settings.maxPolyphony = settings.maxPolyphony;
+                this.instruments.forEach((instrument) => {
+                    if (typeof instrument.setMaxPolyphony === 'function') {
+                        instrument.setMaxPolyphony(settings.maxPolyphony);
+                    }
+                });
+                logger.info(NAMESPACES.AUDIO, `Max polyphony set to ${settings.maxPolyphony}`);
+            }
+
+            // Store current settings
+            this._currentQualitySettings = { ...settings };
+
+            logger.info(NAMESPACES.AUDIO, '✅ Audio quality settings applied successfully');
+            return { success: true };
+
+        } catch (error) {
+            logger.error(NAMESPACES.AUDIO, 'Failed to apply quality settings:', error);
+            return { success: false, error: error.message };
+        }
+    }
+
+    /**
+     * Get current quality settings
+     * @returns {Object} Current quality settings
+     */
+    getQualitySettings() {
+        if (this._currentQualitySettings) {
+            return { ...this._currentQualitySettings };
+        }
+
+        return {
+            ppq: this.transport?.ppq || 96,
+            lookaheadTime: (this.transport?.lookAhead || 120) / 1000,
+            scheduleAheadTime: this.transport?.scheduleAheadTime || 0.15,
+            maxPolyphony: this.settings?.maxPolyphony || 32
+        };
     }
 
     // =================== PERFORMANCE & STATS ===================

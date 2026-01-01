@@ -84,38 +84,43 @@ export class TransportManager {
   // =================== UI UPDATE MANAGER SETUP ===================
 
   /**
-   * ✅ SETUP UI UPDATE MANAGER INTEGRATION
+   * ✅ UNIFIED UI UPDATE MANAGER - Single subscription for all transport UI
+   * Consolidates previous 2 separate subscriptions (30fps + 60fps) into one
    */
   _setupUIUpdateManager() {
-    // Subscribe to position updates with HIGH priority
+    // Single unified subscription at 60fps for smooth playhead
     this.uiUpdateUnsubscribe = uiUpdateManager.subscribe(
-      'transport-position',
-      this._handleUIUpdate.bind(this),
+      'transport-unified',
+      this._handleUnifiedUpdate.bind(this),
       UPDATE_PRIORITIES.HIGH,
-      UPDATE_FREQUENCIES.MEDIUM // 30fps for smooth but efficient updates
+      UPDATE_FREQUENCIES.HIGH // 60fps - single source of UI updates
     );
-
   }
 
   /**
-   * ✅ HANDLE UI UPDATES FROM MANAGER
+   * ✅ UNIFIED UPDATE HANDLER - Handles all transport UI updates
+   * Replaces both _handleUIUpdate and _updatePositionFromAudio
    */
-  _handleUIUpdate(currentTime, frameTime) {
-    // Only update if playing or if UI needs refresh
-    if (!this.state.isPlaying && !this._needsUIRefresh) return;
+  _handleUnifiedUpdate(currentTime, frameTime) {
+    // Skip if not playing and no refresh needed
+    const needsUpdate = this.state.isPlaying || this._needsUIRefresh;
+    if (!needsUpdate) return;
 
-    // Get position from audio engine (cached)
+    // Skip if user is scrubbing
+    if (this.state.isUserScrubbing) return;
+
+    // Get position from audio engine
     if (this.audioEngine?.transport) {
       const newPosition = this.audioEngine.transport.ticksToSteps(
         this.audioEngine.transport.currentTick
       );
 
-      // ✅ PRECISION: Only update if significant change
+      // Only update if significant change (avoids jitter)
       if (Math.abs(newPosition - this.state.currentPosition) > 0.05) {
         this.state.currentPosition = newPosition;
         this.state.lastUpdateTime = Date.now();
 
-        // Update all UI elements with batched updates
+        // Batched UI updates
         this._updateAllPlayheadsBatched();
         this._updateAllTimelinesBatched();
         this._emitPositionUpdate();
@@ -542,53 +547,16 @@ export class TransportManager {
   }
 
   // =================== POSITION TRACKING ===================
+  // ✅ OPTIMIZATION: Position tracking now handled by unified _handleUnifiedUpdate
+  // These methods are kept for backward compatibility but are no-ops
 
   _startPositionTrackingNew() {
-    if (this.positionTrackingSubscription) return;
-
-
-    // Subscribe to UIUpdateManager with HIGH priority for transport
-    this.positionTrackingSubscription = uiUpdateManager.subscribe(
-      'transport-position-tracking',
-      (currentTime, frameTime) => {
-        this._updatePositionFromAudio();
-      },
-      UPDATE_PRIORITIES.HIGH,
-      UPDATE_FREQUENCIES.HIGH
-    );
+    // No-op: Position updates now handled by unified UIUpdateManager subscription
+    // The 'transport-unified' subscription runs at 60fps and handles all updates
   }
 
   _stopPositionTrackingNew() {
-    if (this.positionTrackingSubscription) {
-      this.positionTrackingSubscription(); // Call unsubscribe function
-      this.positionTrackingSubscription = null;
-    }
-  }
-
-  /**
-   * ✅ UPDATE POSITION FROM AUDIO ENGINE
-   * Called by UIUpdateManager subscription
-   */
-  _updatePositionFromAudio() {
-    if (!this.state.isPlaying || this.state.isUserScrubbing) return;
-
-    // Get position from audio engine (cached)
-    if (this.audioEngine?.transport) {
-      const newPosition = this.audioEngine.transport.ticksToSteps(
-        this.audioEngine.transport.currentTick
-      );
-
-      // ✅ PRECISION: Only update if significant change
-      if (Math.abs(newPosition - this.state.currentPosition) > 0.05) {
-        this.state.currentPosition = newPosition;
-        this.state.lastUpdateTime = Date.now();
-
-        // Update all UI elements with batched updates
-        this._updateAllPlayheadsBatched();
-        this._updateAllTimelinesBatched();
-        this._emitPositionUpdate();
-      }
-    }
+    // No-op: Unified subscription handles lifecycle
   }
 
   // =================== AUDIO ENGINE INTEGRATION ===================

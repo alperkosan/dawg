@@ -8,6 +8,7 @@ import { Music, Piano, Volume2, VolumeX, SlidersHorizontal } from 'lucide-react'
 import { Knob } from '@/components/controls';
 import commandManager from '@/lib/commands/CommandManager';
 import { AddNoteCommand } from '@/lib/commands/AddNoteCommand';
+import { FillPatternCommand } from '@/lib/commands/FillPatternCommand';
 import { DeleteNoteCommand } from '@/lib/commands/DeleteNoteCommand';
 import { calculatePatternLoopLength } from '@/lib/utils/patternUtils.js';
 
@@ -117,38 +118,12 @@ const InstrumentRow = ({
       }
     }
 
-    // Clear existing notes if requested
-    if (clearExisting && currentNotes.length > 0) {
-      // Delete all existing notes first
-      currentNotes.forEach(note => {
-        const command = new DeleteNoteCommand(instrument.id, note);
-        commandManager.execute(command);
-      });
-    }
+    // ✅ FIX: Use FillPatternCommand for atomic batched update
+    // This prevents event flooding and ensures correct playback synchronization
+    const command = new FillPatternCommand(instrument.id, stepInterval, clearExisting);
+    commandManager.execute(command);
 
-    // Add notes at specified intervals
-    const notesToAdd = [];
-    for (let step = 0; step < patternLengthInSteps; step += stepInterval) {
-      // Check if note already exists at this step (only if not clearing)
-      if (!clearExisting && currentNotes.some(n => n.time === step)) {
-        continue; // Skip existing notes
-      }
-      notesToAdd.push({ step, pitch: defaultPitch, velocity: defaultVelocity });
-    }
-
-    // Execute all add commands with fixed length (fill pattern behavior)
-    // ✅ FIX: Use fixed length for fill pattern - all notes should have the same length
-    notesToAdd.forEach(({ step }) => {
-      const command = new AddNoteCommand(instrument.id, step, stepInterval);
-      commandManager.execute(command);
-    });
-
-    console.log(`✅ Filled pattern with notes every ${stepInterval} steps:`, {
-      patternLengthInSteps,
-      notesAdded: notesToAdd.length,
-      stepInterval,
-      clearExisting
-    });
+    console.log(`✅ FillPatternCommand executed: every ${stepInterval} steps, clear=${clearExisting}`);
   }, [instrument.id]);
 
   const handleDelete = useCallback(() => {

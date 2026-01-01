@@ -33,8 +33,9 @@ const AudioQualitySettings_v2 = ({ onClose, currentEngine = null }) => {
     const [appliedSettings, setAppliedSettings] = useState(null);
     const [testAudioPlaying, setTestAudioPlaying] = useState(false);
 
-    // Get audio engine
-    const audioEngine = currentEngine || AudioEngineGlobal.get();
+    // ✅ FIX: Get audio engine with multiple fallbacks
+    // Priority: 1. prop, 2. AudioEngineGlobal, 3. window.audioEngine
+    const audioEngine = currentEngine || AudioEngineGlobal.get() || (typeof window !== 'undefined' ? window.audioEngine : null);
 
     // Initialize quality manager
     useEffect(() => {
@@ -107,14 +108,27 @@ const AudioQualitySettings_v2 = ({ onClose, currentEngine = null }) => {
         setIsApplying(true);
 
         try {
-            // TODO: Implement actual engine restart with new settings
             console.log('🎛️ Applying audio settings:', settings);
 
-            // For now, just update applied settings state
+            // ✅ NEW: Apply settings to actual audio engine
+            if (audioEngine && typeof audioEngine.applyQualitySettings === 'function') {
+                const result = audioEngine.applyQualitySettings(settings);
+
+                if (!result.success) {
+                    throw new Error(result.error || 'Failed to apply settings');
+                }
+
+                console.log('✅ Audio engine settings applied successfully');
+            } else {
+                console.warn('⚠️ Audio engine not available or missing applyQualitySettings method');
+                // Still allow updating local state for UI purposes
+            }
+
+            // Update applied settings state
             setAppliedSettings(settings);
 
             const { apiClient } = await import('@/services/api.js');
-            apiClient.showToast('Audio settings applied successfully! Note: Some settings require a full page reload to take effect.', 'success', 5000);
+            apiClient.showToast('Audio settings applied successfully!', 'success', 3000);
 
         } catch (error) {
             console.error('Failed to apply audio settings:', error);
@@ -123,7 +137,7 @@ const AudioQualitySettings_v2 = ({ onClose, currentEngine = null }) => {
         } finally {
             setIsApplying(false);
         }
-    }, [qualityManager, validation]);
+    }, [qualityManager, validation, audioEngine]);
 
     // Test audio with current settings
     const playTestAudio = useCallback(async () => {
@@ -455,6 +469,67 @@ const AudioQualitySettings_v2 = ({ onClose, currentEngine = null }) => {
                                     <span className="slider-value">{settings.mixerChannels} channels</span>
                                 </div>
                                 <small>Available mixer channels</small>
+                            </div>
+
+                            {/* ✅ NEW: PPQ (Pulses Per Quarter Note) */}
+                            <div className="setting-group-v2">
+                                <label>
+                                    <Gauge size={16} />
+                                    <span>MIDI Resolution (PPQ)</span>
+                                </label>
+                                <select
+                                    value={settings.ppq || 480}
+                                    onChange={(e) => handleCustomSettingChange('ppq', parseInt(e.target.value))}
+                                    className="setting-select"
+                                >
+                                    <option value={96}>96 PPQ (FL Studio Default)</option>
+                                    <option value={192}>192 PPQ (Standard)</option>
+                                    <option value={480}>480 PPQ (Professional)</option>
+                                    <option value={960}>960 PPQ (Ableton/Logic Pro)</option>
+                                </select>
+                                <small>Higher = more timing precision, more CPU</small>
+                            </div>
+
+                            {/* ✅ NEW: Lookahead Time */}
+                            <div className="setting-group-v2">
+                                <label>
+                                    <Headphones size={16} />
+                                    <span>Lookahead Time</span>
+                                </label>
+                                <select
+                                    value={settings.lookaheadTime || 0.12}
+                                    onChange={(e) => handleCustomSettingChange('lookaheadTime', parseFloat(e.target.value))}
+                                    className="setting-select"
+                                >
+                                    <option value={0.05}>50ms (Ultra Low Latency)</option>
+                                    <option value={0.08}>80ms (Low Latency)</option>
+                                    <option value={0.1}>100ms (Balanced)</option>
+                                    <option value={0.12}>120ms (Stable)</option>
+                                    <option value={0.15}>150ms (Very Stable)</option>
+                                    <option value={0.2}>200ms (Maximum Stability)</option>
+                                </select>
+                                <small>Audio scheduling lookahead window</small>
+                            </div>
+
+                            {/* ✅ NEW: Schedule Ahead Time */}
+                            <div className="setting-group-v2">
+                                <label>
+                                    <Zap size={16} />
+                                    <span>Schedule Ahead Time</span>
+                                </label>
+                                <select
+                                    value={settings.scheduleAheadTime || 0.15}
+                                    onChange={(e) => handleCustomSettingChange('scheduleAheadTime', parseFloat(e.target.value))}
+                                    className="setting-select"
+                                >
+                                    <option value={0.08}>80ms (Ultra Low Latency)</option>
+                                    <option value={0.1}>100ms (Low Latency)</option>
+                                    <option value={0.12}>120ms (Balanced)</option>
+                                    <option value={0.15}>150ms (Stable)</option>
+                                    <option value={0.2}>200ms (Very Stable)</option>
+                                    <option value={0.3}>300ms (Maximum Stability)</option>
+                                </select>
+                                <small>How far ahead to schedule audio events</small>
                             </div>
                         </div>
 

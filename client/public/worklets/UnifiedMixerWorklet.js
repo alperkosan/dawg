@@ -26,6 +26,13 @@ function getStringFromWasm(ptr, len) {
     return textDecoder.decode(mem.subarray(ptr, ptr + len));
 }
 
+// 🔧 CRITICAL: host_log implementation for WASM worker_log
+// DISABLED: Too noisy
+function host_log(ptr, len) {
+    // const message = getStringFromWasm(ptr, len);
+    // console.log(`[Rust] ${message}`);
+}
+
 class UnifiedMixerWorklet extends AudioWorkletProcessor {
     constructor(options) {
         super();
@@ -46,12 +53,18 @@ class UnifiedMixerWorklet extends AudioWorkletProcessor {
 
         this.port.onmessage = this.handleMessage.bind(this);
         console.log(`🚀 UnifiedMixerWorklet initialized: ${this.numChannels} channels @ ${this.sampleRate}Hz`);
+
+        // 🔧 TEST: Verify host_log function exists
+        console.log('🔧 host_log function exists:', typeof host_log === 'function');
     }
 
     handleMessage(event) {
         const { type, data } = event.data;
         switch (type) {
-            case 'init-wasm': this.initializeWasm(data.wasmArrayBuffer); break;
+            case 'init-wasm':
+                const buffer = data.wasmArrayBuffer || data.wasmBytes;
+                this.initializeWasm(buffer);
+                break;
             case 'set-channel-params': this.updateChannelParams(data); break;
             case 'set-channel-eq': this.updateChannelEQ(data); break;
             case 'add-channel-effect': this.addChannelEffect(data); break;
@@ -69,7 +82,17 @@ class UnifiedMixerWorklet extends AudioWorkletProcessor {
                 if (sab && sab instanceof SharedArrayBuffer) {
                     this.sharedStateBuffer = sab;
                     this.sharedStateView = new Float32Array(this.sharedStateBuffer);
-                    console.log('🔗 AudioWorklet: Shared State Buffer connected');
+                    this.sharedStateIntView = new Int32Array(this.sharedStateBuffer);
+                    console.log('🔗 AudioWorklet: Shared State Buffer connected', {
+                        byteLength: sab.byteLength,
+                        floatLength: this.sharedStateView.length,
+                        intLength: this.sharedStateIntView.length
+                    });
+                    // Log initial state
+                    console.log('🔗 Initial SAB state:', {
+                        playState: this.sharedStateIntView[0],
+                        bpm: this.sharedStateView[16]
+                    });
                 }
                 break;
         }
@@ -77,7 +100,11 @@ class UnifiedMixerWorklet extends AudioWorkletProcessor {
 
     async initializeWasm(wasmArrayBuffer) {
         try {
-            console.log('⏳ Loading WASM in AudioWorklet...');
+            console.log('⏳ Loading WASM in AudioWorklet...', wasmArrayBuffer ? `Buffer: ${wasmArrayBuffer.byteLength} bytes` : 'NO BUFFER');
+
+            if (!wasmArrayBuffer) {
+                throw new Error('initializeWasm: wasmArrayBuffer is null or undefined');
+            }
 
             // Load WASM from ArrayBuffer passed from main thread
             if (!wasmModuleCache) {
@@ -85,14 +112,12 @@ class UnifiedMixerWorklet extends AudioWorkletProcessor {
                     wasmLoadingPromise = (async () => {
                         const imports = {
                             './dawg-utils.js': {
-                                host_log: (ptr, len) => {
-                                    const msg = getStringFromWasm(ptr, len);
-                                    console.log('[Rust] ' + msg);
-                                }
+                                // 🔧 CRITICAL: host_log for WASM worker_log
+                                host_log: host_log
                             },
                             wbg: {
                                 __wbg_wbindgencopytotypedarray_d105febdb9374ca3: (arg0, arg1, arg2) => {
-                                    // Copy typed array stub (not used in our case)
+                                    // Copy typed array stub (required by WASM)
                                 },
                                 __wbg_wbindgenthrow_451ec1a8469d7eb6: (arg0, arg1) => {
                                     const msg = getStringFromWasm(arg0, arg1);
@@ -163,7 +188,7 @@ class UnifiedMixerWorklet extends AudioWorkletProcessor {
 
             this.isInitialized = true;
             this.port.postMessage({ type: 'wasm-initialized', success: true });
-            console.log('✅ WASM Mixer fully operational.');
+            console.log(`✅ WASM Mixer fully operational. ProcessorPtr: ${this.processorPtr}, StatePtr: ${this.statePtr}`);
 
         } catch (error) {
             console.error('❌ Failed to initialize WASM:', error);
@@ -277,7 +302,8 @@ class UnifiedMixerWorklet extends AudioWorkletProcessor {
     }
 
     process(inputs, outputs, parameters) {
-        if (!this.isInitialized || !this.wasmProcessor) {
+        // ✅ FIX: Allow processing if initialized, even if wasmProcessor is missing (Fallback Mode)
+        if (!this.isInitialized || (!this.wasmProcessor && !this.isFallback)) {
             return true;
         }
 
@@ -289,8 +315,29 @@ class UnifiedMixerWorklet extends AudioWorkletProcessor {
 
         // 🔧 SYNC: Copy JS SAB -> Wasm Memory (Commands)
         if (this.sharedStateView && this.statePtr) {
+            // Debug: Log play state before sync (every 100 frames) - DISABLED
+            // if (this.stats.processCount % 100 === 0) {
+            //     const playState = this.sharedStateIntView ? this.sharedStateIntView[0] : 'N/A';
+            //     const bpm = this.sharedStateView[16];
+            //     const currentTickFromSAB = this.sharedStateView[18];
+            //     console.log('🔄 SAB Sync to WASM:', {
+            //         frame: this.stats.processCount,
+            //         playState,
+            //         bpm,
+            //         tickFromWASM: currentTickFromSAB,
+            //         statePtr: this.statePtr,
+            //         hasSAB: !!this.sharedStateBuffer
+            //     });
+            // }
+
             const wasmMem = new Float32Array(wasmModuleCache.memory.buffer);
             wasmMem.set(this.sharedStateView, this.statePtr / 4);
+
+            // Also copy the Int32 view for play state
+            if (this.sharedStateIntView) {
+                const wasmIntMem = new Int32Array(wasmModuleCache.memory.buffer);
+                wasmIntMem.set(this.sharedStateIntView.subarray(0, 16), this.statePtr / 4);
+            }
         }
 
         // 1. Prepare Inputs (Interleave directly into WASM memory)
@@ -318,6 +365,7 @@ class UnifiedMixerWorklet extends AudioWorkletProcessor {
 
         // 2. Process (Wasm or Fallback)
         if (this.isFallback) {
+            if (this.stats.processCount < 10) console.log('⚠️ UnifiedMixer: Running JS Fallback');
             // Fallback needs a JS array
             // We can read back from wasmFloat32 or just use the old logic if fallback is active.
             // For simplicity, if fallback, we should probably just use the old logic.
@@ -349,6 +397,10 @@ class UnifiedMixerWorklet extends AudioWorkletProcessor {
             );
         } else if (this.wasmExports && this.wasmExports.unifiedmixerprocessor_process_mix) {
             // Rust: processor.process_mix(interleaved_ptr, input_len, out_l_ptr, out_r_ptr, block_size)
+            // DISABLED: Debug log
+            // if (this.stats.processCount % 500 === 0) {
+            //     console.log(`🔊 UnifiedMixer: ProcCount: ${this.stats.processCount}, blockSize: ${blockSize}`);
+            // }
             this.wasmExports.unifiedmixerprocessor_process_mix(
                 this.processorPtr,
                 this.inputPtr,
@@ -357,6 +409,15 @@ class UnifiedMixerWorklet extends AudioWorkletProcessor {
                 this.outputRPtr,
                 blockSize
             );
+
+            // DISABLED: Debug log
+            // if (this.stats.processCount % 500 === 0) {
+            //     wasmFloat32 = new Float32Array(wasmModuleCache.memory.buffer);
+            //     const outL = wasmFloat32.subarray(this.outputLPtr / 4, (this.outputLPtr / 4) + blockSize);
+            //     let maxL = 0;
+            //     for (let i = 0; i < outL.length; i++) if (Math.abs(outL[i]) > maxL) maxL = Math.abs(outL[i]);
+            //     console.log(`🔊 UnifiedMixer: Output MaxL: ${maxL.toFixed(6)}`);
+            // }
         }
 
         // 3. Copy Output

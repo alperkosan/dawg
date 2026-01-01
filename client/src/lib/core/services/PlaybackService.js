@@ -12,6 +12,7 @@
 
 import { logger, NAMESPACES } from '../../utils/debugLogger.js';
 import { idleDetector } from '../../utils/IdleDetector.js';
+import EventBus from '../EventBus.js';
 
 export class PlaybackService {
     /**
@@ -20,9 +21,10 @@ export class PlaybackService {
     constructor(engine) {
         this.engine = engine;
 
-        // Playback state
-        this.isPlaying = false;
-        this.isPaused = false;
+        // ✅ UNIFIED TRANSPORT: isPlaying/isPaused now delegated to transport (SAB)
+        // Local fields are fallbacks only
+        this._fallbackIsPlaying = false;
+        this._fallbackIsPaused = false;
         // ✅ CRITICAL FIX: Position now reads from Transport (Single Source of Truth)
         this._currentPosition = 0; // Backing field for fallback only
         this.startTime = 0;
@@ -47,8 +49,31 @@ export class PlaybackService {
         this.positionUpdateRate = 60; // Hz
         this._positionInterval = null;
 
+        // ✅ PHASE 2.2: Scheduling optimizer for debounced scheduling
+        this.schedulingOptimizer = this.engine.schedulingOptimizer;
+
         // Event listeners
         this._listeners = new Map();
+
+        // ✅ LIVE NOTE SCHEDULING: Bind global events for immediate note scheduling
+        this._bindGlobalEvents();
+    }
+
+    // ✅ UNIFIED TRANSPORT: SAB-backed getters (delegate to NativeTransportSystem)
+    get isPlaying() {
+        return this.transport?.isPlaying ?? this._fallbackIsPlaying;
+    }
+
+    set isPlaying(value) {
+        this._fallbackIsPlaying = value;
+    }
+
+    get isPaused() {
+        return this.transport?.isPaused ?? this._fallbackIsPaused;
+    }
+
+    set isPaused(value) {
+        this._fallbackIsPaused = value;
     }
 
     // =================== SINGLE SOURCE OF TRUTH GETTERS ===================
@@ -90,40 +115,159 @@ export class PlaybackService {
 
     /**
      * Start playback
-     * @param {number} startStep - Step to start from
-     * @returns {this}
+     * @param {number} startStep - Step to start from (null = use current position)
+     * @returns {Promise<this>}
      */
-    play(startStep = 0) {
+    async play(startStep = null) {
         if (!this.engine.isInitialized) {
             logger.warn(NAMESPACES.AUDIO, 'Cannot play: engine not initialized');
             return this;
         }
 
-        if (this.isPaused) {
-            return this.resume();
-        }
+        // ✅ FIX: Removed the isPaused check that was causing resume to start from 0
+        // TransportController.togglePlayPause() already handles pause/resume detection
+        // Having a second check here caused race conditions with SAB state
 
         try {
-            this.currentPosition = startStep;
+            // ✅ PHASE 1.1: Update loop settings before playback
+            this._updateLoopSettings();
+
+            // ✅ PHASE 1.3: Improved position management
+            let playPosition = this.currentPosition;
+
+            if (startStep !== null) {
+                // Explicit position: jump to requested step
+                playPosition = startStep;
+                this._jumpToStep(startStep);
+            } else {
+                // Use current position (may have been set by timeline click)
+                playPosition = this.currentPosition;
+            }
+
             this.startTime = this.audioContext.currentTime;
-            this.isPlaying = true;
-            this.isPaused = false;
+            // ✅ UNIFIED: State now comes from SAB via getters
+            this._fallbackIsPlaying = true;
+            this._fallbackIsPaused = false;
 
             // ✅ CRITICAL: Prevent idle mode during playback
             idleDetector.setPlaying(true);
 
-            // Start transport
+            // ✅ PHASE 1.4: Resume AudioContext if suspended
+            if (this.audioContext.state === 'suspended') {
+                await this.audioContext.resume();
+                logger.debug(NAMESPACES.AUDIO, 'AudioContext resumed for playback');
+                await new Promise(resolve => setTimeout(resolve, 5)); // 5ms stability delay
+            }
+
+            // ✅ PHASE 1.2: Calculate ADC pre-delay for plugin latency compensation
+            const maxLatency = this.engine.latencyCompensator?.getMaxLatencySeconds() || 0;
+            const safetyBuffer = 0.050; // 50ms safety buffer for lookahead stability
+            const startDelay = Math.max(0.010, maxLatency + safetyBuffer); // Min 10ms
+            const adjustedStartTime = this.audioContext.currentTime + startDelay;
+
+            logger.debug(NAMESPACES.AUDIO, 'ADC pre-delay:', {
+                latency: maxLatency.toFixed(3),
+                preDelay: startDelay.toFixed(3),
+                startTime: adjustedStartTime.toFixed(3)
+            });
+
+            // Start transport with adjusted time
             if (this.transport) {
-                this.transport.start(startStep);
+                // ✅ CRITICAL FIX: Setup loop event listener (only once)
+                if (!this._loopListenerSetup) {
+                    this.transport.on('loop', this._handleLoopRestart.bind(this));
+                    this._loopListenerSetup = true;
+                    logger.debug(NAMESPACES.AUDIO, '✅ Loop restart listener registered');
+                }
+
+                this.transport.start(adjustedStartTime);
+
+                // ✅ Set position AFTER start() to override any transport reset
+                if (this.transport.setPosition) {
+                    this.transport.setPosition(playPosition);
+                }
+            }
+
+            // ✅ CRITICAL FIX: Schedule notes for playback
+            // This was missing - PlaybackManager calls _scheduleContent() but facade didn't
+            if (this.schedulerService) {
+                logger.info(NAMESPACES.AUDIO, '🎵 Scheduling notes for playback...');
+                try {
+                    // ✅ CRITICAL: Start the scheduler tick loop
+                    // This processes scheduled events in the lookahead window
+                    this.schedulerService.start();
+
+                    // Get active pattern/arrangement from store
+                    const { useArrangementStore } = await import('@/store/useArrangementStore');
+                    const arrangementStore = useArrangementStore.getState();
+                    const currentBPM = this.engine.transport?.bpm || 120;
+
+                    // ✅ PHASE 3: Detect pattern vs song mode
+                    const currentMode = this.playbackMode || 'pattern';
+
+                    if (currentMode === 'song') {
+                        // ✅ PHASE 3: Song/arrangement mode
+                        const arrangementClips = arrangementStore.arrangementClips || [];
+                        const arrangementTracks = arrangementStore.arrangementTracks || [];
+                        const patterns = arrangementStore.patterns || {};
+
+                        if (arrangementClips.length > 0) {
+                            const songData = {
+                                clips: arrangementClips,
+                                tracks: arrangementTracks,
+                                patterns: patterns
+                            };
+
+                            await this.schedulerService.scheduleSong(
+                                songData,
+                                adjustedStartTime,
+                                currentBPM
+                            );
+                            logger.info(NAMESPACES.AUDIO, `✅ Scheduled ${arrangementClips.length} clips for song mode`);
+                        } else {
+                            logger.warn(NAMESPACES.AUDIO, '⚠️ No clips in arrangement');
+                        }
+                    } else {
+                        // Pattern mode (default)
+                        const activePatternId = arrangementStore.activePatternId;
+                        const activePattern = arrangementStore.patterns[activePatternId];
+
+                        if (activePattern && activePattern.data) {
+                            // ✅ DEBUG: Log the actual playPosition value and its source
+                            logger.debug(NAMESPACES.AUDIO, `🔍 DEBUG play() - playPosition analysis:`, {
+                                playPosition,
+                                currentPosition: this.currentPosition,
+                                transportStep: this.transport?.getCurrentStep?.(),
+                                expectedStepsAt0_3375beats: 0.3375 * 4, // Should be 1.35
+                                expectedStepsAt1_7375beats: 1.7375 * 4  // Should be 6.95
+                            });
+
+                            // ✅ FIX: Pass playPosition to skip notes before current position
+                            // This ensures resume plays from the correct step, not from step 0
+                            this.schedulerService.schedulePattern(
+                                activePatternId,
+                                activePattern,
+                                adjustedStartTime,  // ✅ Use adjusted time for latency compensation
+                                currentBPM,
+                                playPosition        // ✅ NEW: Pass current step to filter notes
+                            );
+                            logger.info(NAMESPACES.AUDIO, `✅ Scheduled pattern ${activePatternId} for playback from step ${playPosition}`);
+                        } else {
+                            logger.warn(NAMESPACES.AUDIO, '⚠️ No active pattern to schedule');
+                        }
+                    }
+                } catch (error) {
+                    logger.error(NAMESPACES.AUDIO, 'Failed to schedule notes:', error);
+                }
             }
 
             // Start position tracking
             this._startPositionTracking();
 
             // Emit event
-            this._emit('play', { startStep, time: this.startTime });
+            this._emit('play', { startStep: playPosition, time: this.startTime });
 
-            logger.info(NAMESPACES.AUDIO, `Playback started at step ${startStep}`);
+            logger.info(NAMESPACES.AUDIO, `Playback started at step ${playPosition} (mode: ${this.playbackMode || 'pattern'})`);
         } catch (error) {
             logger.error(NAMESPACES.AUDIO, 'Failed to start playback:', error);
         }
@@ -141,17 +285,27 @@ export class PlaybackService {
         }
 
         try {
+            // ✅ CRITICAL: Stop scheduler FIRST to prevent new notes
+            if (this.schedulerService) {
+                this.schedulerService.stop();
+                logger.debug(NAMESPACES.AUDIO, 'Scheduler stopped on stop()');
+            }
+
             // Stop transport
             if (this.transport) {
                 this.transport.stop();
             }
 
+            // Release all notes gracefully
+            this._releaseAllNotes();
+
             // Stop all instrument sounds
             this._stopAllSounds();
 
             // Reset state
-            this.isPlaying = false;
-            this.isPaused = false;
+            // ✅ UNIFIED: State now comes from SAB via getters
+            this._fallbackIsPlaying = false;
+            this._fallbackIsPaused = false;
             this.currentPosition = 0;
 
             // ✅ CRITICAL: Re-enable idle detection
@@ -186,11 +340,18 @@ export class PlaybackService {
                 this.transport.pause();
             }
 
+            // Stop scheduler to prevent notes from continuing
+            if (this.schedulerService) {
+                this.schedulerService.stop();
+                logger.debug(NAMESPACES.AUDIO, 'Scheduler stopped on pause');
+            }
+
             // Release all notes gracefully
             this._releaseAllNotes();
 
-            this.isPlaying = false;
-            this.isPaused = true;
+            // ✅ UNIFIED: State now comes from SAB via getters
+            this._fallbackIsPlaying = false;
+            this._fallbackIsPaused = true;
 
             // Emit event
             this._emit('pause', { position: this.currentPosition });
@@ -207,28 +368,106 @@ export class PlaybackService {
      * Resume playback from paused position
      * @returns {this}
      */
-    resume() {
+    async resume() {
         if (!this.isPaused) {
             return this;
         }
 
         try {
-            // ✅ FIX: NativeTransportSystem doesn't have resume(), use start() with current position
-            // Resume is just starting from the paused position
+            // ✅ Update loop settings
+            await this._updateLoopSettings();
+
+            const resumePosition = this.currentPosition;
+
+            // ✅ Calculate ADC pre-delay for latency compensation
+            const maxLatency = this.engine.latencyCompensator?.getMaxLatencySeconds() || 0;
+            const safetyBuffer = 0.050;
+            const startDelay = Math.max(0.010, maxLatency + safetyBuffer);
+            const adjustedStartTime = this.audioContext.currentTime + startDelay;
+
+            // Resume transport
             if (this.transport) {
-                this.transport.start(this.currentPosition);
+                this.transport.start(adjustedStartTime);
+                if (this.transport.setPosition) {
+                    this.transport.setPosition(resumePosition);
+                }
             }
 
-            this.isPlaying = true;
-            this.isPaused = false;
+            // ✅ UNIFIED: State now comes from SAB via getters
+            this._fallbackIsPlaying = true;
+            this._fallbackIsPaused = false;
+            this.startTime = this.audioContext.currentTime;
+
+            // ✅ CRITICAL: Start scheduler and reschedule notes from current position
+            if (this.schedulerService) {
+                logger.info(NAMESPACES.AUDIO, '🎵 Rescheduling notes after resume...');
+
+                // ✅ FIX: Clear all previously scheduled events before rescheduling
+                // Without this, events stack up after each pause/resume cycle
+                this.schedulerService.cancelAll();
+
+                this.schedulerService.start();
+
+                const { useArrangementStore } = await import('@/store/useArrangementStore');
+                const arrangementStore = useArrangementStore.getState();
+                const currentBPM = this.engine.transport?.bpm || 120;
+                const currentMode = this.playbackMode || 'pattern';
+
+                if (currentMode === 'song') {
+                    // Song mode
+                    const arrangementClips = arrangementStore.arrangementClips || [];
+                    const arrangementTracks = arrangementStore.arrangementTracks || [];
+                    const patterns = arrangementStore.patterns || {};
+
+                    if (arrangementClips.length > 0) {
+                        const songData = {
+                            clips: arrangementClips,
+                            tracks: arrangementTracks,
+                            patterns: patterns
+                        };
+
+                        await this.schedulerService.scheduleSong(
+                            songData,
+                            adjustedStartTime,
+                            currentBPM
+                        );
+                        logger.info(NAMESPACES.AUDIO, `✅ Rescheduled song for resume`);
+                    }
+                } else {
+                    // Pattern mode
+                    const activePatternId = arrangementStore.activePatternId;
+                    const activePattern = arrangementStore.patterns[activePatternId];
+
+                    if (activePattern && activePattern.data) {
+                        // ✅ DEBUG: Log the actual resumePosition value and its source
+                        logger.debug(NAMESPACES.AUDIO, `🔍 DEBUG resume() - resumePosition analysis:`, {
+                            resumePosition,
+                            currentPosition: this.currentPosition,
+                            transportStep: this.transport?.getCurrentStep?.(),
+                            expectedStepsAt0_3375beats: 0.3375 * 4, // Should be 1.35
+                            expectedStepsAt1_7375beats: 1.7375 * 4  // Should be 6.95
+                        });
+
+                        // ✅ FIX: Pass resumePosition to skip notes before current position
+                        this.schedulerService.schedulePattern(
+                            activePatternId,
+                            activePattern,
+                            adjustedStartTime,
+                            currentBPM,
+                            resumePosition  // ✅ Pass current step to filter already-played notes
+                        );
+                        logger.info(NAMESPACES.AUDIO, `✅ Rescheduled pattern ${activePatternId} for resume from step ${resumePosition}`);
+                    }
+                }
+            }
 
             // Restart position tracking
             this._startPositionTracking();
 
             // Emit event
-            this._emit('resume', { position: this.currentPosition });
+            this._emit('resume', { position: resumePosition });
 
-            logger.info(NAMESPACES.AUDIO, `Playback resumed from position ${this.currentPosition}`);
+            logger.info(NAMESPACES.AUDIO, `Playback resumed from position ${resumePosition}`);
         } catch (error) {
             logger.error(NAMESPACES.AUDIO, 'Failed to resume playback:', error);
         }
@@ -297,10 +536,28 @@ export class PlaybackService {
         this.loopSettings.enabled = enabled;
 
         if (this.transport) {
-            this.transport.setLoop(enabled);
+            this.transport.setLoopEnabled(enabled);
         }
 
         this._emit('loopChange', { ...this.loopSettings });
+
+        return this;
+    }
+
+    /**
+     * Set BPM (Beats Per Minute)
+     * @param {number} bpm - Beats per minute
+     * @returns {this}
+     */
+    setBPM(bpm) {
+        logger.info(NAMESPACES.AUDIO, `🎵 PlaybackService.setBPM(${bpm}) called`);
+
+        if (this.transport) {
+            this.transport.setBPM(bpm);
+        }
+
+        this._emit('bpmChange', { bpm });
+        logger.info(NAMESPACES.AUDIO, `BPM set to ${bpm}`);
 
         return this;
     }
@@ -321,12 +578,69 @@ export class PlaybackService {
      * @param {number} step 
      * @returns {this}
      */
-    jumpToStep(step) {
+    async jumpToStep(step) {
         const clampedStep = Math.max(0, step);
         this.currentPosition = clampedStep;
 
         if (this.transport) {
             this.transport.setPosition(clampedStep);
+        }
+
+        // ✅ FIX: If playing, reschedule notes from the new position
+        // Otherwise audio continues from old position while playhead shows new position
+        if (this.isPlaying && this.schedulerService) {
+            logger.info(NAMESPACES.AUDIO, `🔄 Rescheduling notes after jump to step ${clampedStep}`);
+
+            // Cancel all current scheduled notes
+            this.schedulerService.cancelAll();
+
+            // Calculate adjusted start time for new position
+            const maxLatency = this.engine.latencyCompensator?.getMaxLatencySeconds() || 0;
+            const safetyBuffer = 0.050;
+            const startDelay = Math.max(0.010, maxLatency + safetyBuffer);
+            const adjustedStartTime = this.audioContext.currentTime + startDelay;
+
+            const { useArrangementStore } = await import('@/store/useArrangementStore');
+            const arrangementStore = useArrangementStore.getState();
+            const currentBPM = this.engine.transport?.bpm || 120;
+            const currentMode = this.playbackMode || 'pattern';
+
+            if (currentMode === 'song') {
+                // Song mode - reschedule song from new position
+                const arrangementClips = arrangementStore.arrangementClips || [];
+                const arrangementTracks = arrangementStore.arrangementTracks || [];
+                const patterns = arrangementStore.patterns || {};
+
+                if (arrangementClips.length > 0) {
+                    const songData = {
+                        clips: arrangementClips,
+                        tracks: arrangementTracks,
+                        patterns: patterns
+                    };
+
+                    await this.schedulerService.scheduleSong(
+                        songData,
+                        adjustedStartTime,
+                        currentBPM
+                    );
+                    logger.info(NAMESPACES.AUDIO, `✅ Rescheduled song from step ${clampedStep}`);
+                }
+            } else {
+                // Pattern mode - reschedule pattern from new position
+                const activePatternId = arrangementStore.activePatternId;
+                const activePattern = arrangementStore.patterns[activePatternId];
+
+                if (activePattern && activePattern.data) {
+                    this.schedulerService.schedulePattern(
+                        activePatternId,
+                        activePattern,
+                        adjustedStartTime,
+                        currentBPM,
+                        clampedStep  // ✅ Pass new position to skip already-played notes
+                    );
+                    logger.info(NAMESPACES.AUDIO, `✅ Rescheduled pattern ${activePatternId} from step ${clampedStep}`);
+                }
+            }
         }
 
         this._emit('positionUpdate', { step: clampedStep });
@@ -528,12 +842,331 @@ export class PlaybackService {
     }
 
     /**
+     * Update loop settings from store
+     * @private
+     */
+    async _updateLoopSettings() {
+        if (!this.transport) return;
+
+        try {
+            const { useArrangementStore } = await import('@/store/useArrangementStore');
+            const { loopEnabled, loopStart, loopEnd } = useArrangementStore.getState();
+
+            this.transport.setLoopEnabled(loopEnabled);
+            if (loopEnabled) {
+                this.transport.setLoopPoints(loopStart, loopEnd);
+                logger.debug(NAMESPACES.AUDIO, `Loop settings updated: ${loopStart}-${loopEnd}`);
+            }
+        } catch (error) {
+            logger.error(NAMESPACES.AUDIO, 'Failed to update loop settings:', error);
+        }
+    }
+
+    /**
+     * Handle loop restart event from transport
+     * Reschedules the pattern from the loop start position
+     * @private
+     */
+    async _handleLoopRestart() {
+        if (!this.isPlaying || !this.schedulerService) {
+            return;
+        }
+
+        try {
+            logger.debug(NAMESPACES.AUDIO, '🔁 Loop restart detected - rescheduling pattern');
+
+            // Cancel all currently scheduled events (they're from the previous loop)
+            this.schedulerService.cancelAll();
+
+            // Calculate time for new loop iteration
+            const maxLatency = this.engine.latencyCompensator?.getMaxLatencySeconds() || 0;
+            const safetyBuffer = 0.050; // ✅ CRITICAL FIX: Increased to 50ms to prevent scheduling in the past
+            const startDelay = Math.max(0.050, maxLatency + safetyBuffer); // Minimum 50ms to account for scheduling overhead
+            const adjustedStartTime = this.audioContext.currentTime + startDelay;
+
+            // Get pattern data
+            const { useArrangementStore } = await import('@/store/useArrangementStore');
+            const arrangementStore = useArrangementStore.getState();
+            const currentBPM = this.engine.transport?.bpm || 120;
+            const currentMode = this.playbackMode || 'pattern';
+
+            if (currentMode === 'song') {
+                // Song mode
+                const arrangementClips = arrangementStore.arrangementClips || [];
+                const arrangementTracks = arrangementStore.arrangementTracks || [];
+                const patterns = arrangementStore.patterns || {};
+
+                if (arrangementClips.length > 0) {
+                    const songData = {
+                        clips: arrangementClips,
+                        tracks: arrangementTracks,
+                        patterns: patterns
+                    };
+
+                    await this.schedulerService.scheduleSong(
+                        songData,
+                        adjustedStartTime,
+                        currentBPM
+                    );
+                    logger.debug(NAMESPACES.AUDIO, '✅ Rescheduled song for loop restart');
+                }
+            } else {
+                // Pattern mode
+                const activePatternId = arrangementStore.activePatternId;
+                const activePattern = arrangementStore.patterns[activePatternId];
+
+                if (activePattern && activePattern.data) {
+                    // Reschedule from loop start (step 0 of the loop)
+                    this.schedulerService.schedulePattern(
+                        activePatternId,
+                        activePattern,
+                        adjustedStartTime,
+                        currentBPM,
+                        0  // Start from beginning of loop
+                    );
+                    logger.debug(NAMESPACES.AUDIO, `✅ Rescheduled pattern ${activePatternId} for loop restart`);
+                }
+            }
+        } catch (error) {
+            logger.error(NAMESPACES.AUDIO, 'Failed to reschedule on loop restart:', error);
+        }
+    }
+
+    /**
+     * Jump to specific step
+     * @param {number} step - Step to jump to
+     * @private
+     */
+    _jumpToStep(step) {
+        this.currentPosition = step;
+        if (this.transport && this.transport.setPosition) {
+            this.transport.setPosition(step);
+        }
+        this._emit('positionChange', { position: step });
+        logger.debug(NAMESPACES.AUDIO, `Jumped to step ${step}`);
+    }
+
+    /**
      * Dispose the service
      */
     dispose() {
         this.stop();
         this._stopPositionTracking();
+        this._unbindGlobalEvents();
         this._listeners.clear();
         logger.info(NAMESPACES.AUDIO, 'PlaybackService disposed');
+    }
+
+    // =================== LIVE NOTE SCHEDULING ===================
+
+    /**
+     * Bind global EventBus events for live note scheduling
+     * @private
+     */
+    _bindGlobalEvents() {
+        // Store bound handlers for cleanup
+        this._boundHandlers = {
+            noteAdded: this._handleNoteAdded.bind(this),
+            notesAdded: this._handleNotesAdded.bind(this), // ✅ FIX: Bind the bulk handler
+            noteRemoved: this._handleNoteRemoved.bind(this),
+            noteModified: this._handleNoteModified.bind(this)
+        };
+
+        EventBus.on('NOTE_ADDED', this._boundHandlers.noteAdded);
+        EventBus.on('NOTES_ADDED', this._boundHandlers.notesAdded); // ✅ NEW: Bulk handler
+        EventBus.on('NOTE_REMOVED', this._boundHandlers.noteRemoved);
+        EventBus.on('NOTE_MODIFIED', this._boundHandlers.noteModified);
+
+        logger.debug(NAMESPACES.AUDIO, '✅ PlaybackService: Global event handlers bound');
+    }
+
+    /**
+     * Unbind global EventBus events
+     * @private
+     */
+    _unbindGlobalEvents() {
+        if (this._boundHandlers) {
+            EventBus.off('NOTE_ADDED', this._boundHandlers.noteAdded);
+            EventBus.off('NOTES_ADDED', this._boundHandlers.notesAdded);
+            EventBus.off('NOTE_REMOVED', this._boundHandlers.noteRemoved);
+            EventBus.off('NOTE_MODIFIED', this._boundHandlers.noteModified);
+            this._boundHandlers = null;
+        }
+    }
+
+    /**
+     * Handle NOTE_ADDED event - schedule new note immediately during playback
+     * @param {Object} data - {patternId, instrumentId, note}
+     * @private
+     */
+    async _handleNoteAdded(data) {
+        await this._handleNotesAdded({ ...data, notes: [data.note] });
+    }
+
+    /**
+     * Handle NOTES_ADDED event - schedule multiple new notes immediately
+     * @param {Object} data - {patternId, instrumentId, notes}
+     * @private
+     */
+    async _handleNotesAdded(data) {
+        const { patternId, instrumentId, notes } = data;
+
+        // Optimize: Single import for bulk operation
+        const { useArrangementStore } = await import('@/store/useArrangementStore');
+        const arrangementStore = useArrangementStore.getState();
+
+        if (patternId !== arrangementStore.activePatternId) {
+            return;
+        }
+
+        // ✅ LIVE SCHEDULING: If playing and not paused, schedule immediately
+        if (this.isPlaying && !this.isPaused && notes && notes.length > 0) {
+            console.log(`✅ Playback active - scheduling ${notes.length} notes immediately`);
+            notes.forEach(note => {
+                this._scheduleNewNoteImmediate(instrumentId, note);
+            });
+        }
+    }
+
+    /**
+     * Handle NOTE_REMOVED event - cancel scheduled note during playback
+     * @param {Object} data - {patternId, instrumentId, noteId, note}
+     * @private
+     */
+    async _handleNoteRemoved(data) {
+        const { patternId, instrumentId, noteId, note } = data;
+
+        // Only handle active pattern
+        const { useArrangementStore } = await import('@/store/useArrangementStore');
+        const arrangementStore = useArrangementStore.getState();
+        if (patternId !== arrangementStore.activePatternId) return;
+
+        console.log('🎵 PlaybackService._handleNoteRemoved:', { instrumentId, noteId });
+
+        // ✅ If playing, stop the note if it's currently sounding
+        if (this.isPlaying && !this.isPaused && note && instrumentId) {
+            const instrument = this.engine.instruments?.get(instrumentId);
+            if (instrument && note.pitch && typeof instrument.releaseNote === 'function') {
+                try {
+                    instrument.releaseNote(note.pitch);
+                } catch (e) {
+                    console.error('Error stopping removed note:', e);
+                }
+            }
+
+            // Cancel future scheduled events for this note
+            if (this.schedulerService && noteId) {
+                this.schedulerService.cancelNote(instrumentId, noteId);
+            }
+        }
+    }
+
+    /**
+     * Handle NOTE_MODIFIED event - reschedule modified note
+     * @param {Object} data - {patternId, instrumentId, note, oldNote}
+     * @private
+     */
+    async _handleNoteModified(data) {
+        const { patternId, instrumentId, note, oldNote } = data;
+
+        // Only handle active pattern
+        const { useArrangementStore } = await import('@/store/useArrangementStore');
+        const arrangementStore = useArrangementStore.getState();
+        if (patternId !== arrangementStore.activePatternId) return;
+
+        console.log('🎵 PlaybackService._handleNoteModified:', { instrumentId, note });
+
+        // ✅ If playing, stop old note and schedule new one
+        if (this.isPlaying && !this.isPaused) {
+            // Stop old note
+            if (oldNote && instrumentId) {
+                const instrument = this.engine.instruments?.get(instrumentId);
+                if (instrument && oldNote.pitch && typeof instrument.releaseNote === 'function') {
+                    instrument.releaseNote(oldNote.pitch);
+                }
+                // Cancel old scheduled events
+                if (this.schedulerService && oldNote.id) {
+                    this.schedulerService.cancelNote(instrumentId, oldNote.id);
+                }
+            }
+            // Schedule new note
+            this._scheduleNewNoteImmediate(instrumentId, note);
+        }
+    }
+
+    /**
+     * Schedule a single note immediately during live playback
+     * @param {string} instrumentId - Instrument ID
+     * @param {Object} note - Note object
+     * @private
+     */
+    _scheduleNewNoteImmediate(instrumentId, note) {
+        if (!this.isPlaying || this.isPaused || !this.schedulerService) {
+            console.log('⚠️ Not playing or no scheduler, skipping immediate schedule');
+            return;
+        }
+
+        const instrument = this.engine.instruments?.get(instrumentId);
+        if (!instrument) {
+            console.log(`⚠️ Instrument ${instrumentId} not found`);
+            return;
+        }
+
+        const currentTime = this.audioContext.currentTime;
+        const currentStep = this.currentPosition;
+        const noteStep = note.startTime ?? note.time ?? 0;
+
+        // Calculate loop boundaries
+        const loopStart = this.loopSettings.start;
+        const loopEnd = this.loopSettings.end;
+        const loopLength = loopEnd - loopStart;
+
+        // Normalize positions within loop
+        const normalize = (v, m) => {
+            if (!m || m <= 0) return v;
+            const r = v % m;
+            return r < 0 ? r + m : r;
+        };
+        const relativeCurrentStep = normalize(currentStep - loopStart, loopLength);
+        const relativeNoteStep = normalize(noteStep - loopStart, loopLength);
+
+        // Determine when note should play
+        let nextPlayStep;
+        if (relativeNoteStep > relativeCurrentStep) {
+            // Note is later in current loop
+            nextPlayStep = noteStep;
+        } else {
+            // Note is earlier - schedule for next loop
+            nextPlayStep = noteStep + loopLength;
+        }
+
+        // Convert step to time
+        const secondsPerStep = this.transport?.stepsToSeconds?.(1) || (60 / (this.transport?.bpm || 120) / 4);
+        const transportStartTime = currentTime - (currentStep * secondsPerStep);
+        let absoluteTime = transportStartTime + (nextPlayStep * secondsPerStep);
+
+        console.log('🎯 Scheduling note immediately:', {
+            instrumentId,
+            noteStep,
+            nextPlayStep,
+            currentStep: currentStep.toFixed(2),
+            absoluteTime: absoluteTime.toFixed(4),
+            timeDelta: (absoluteTime - currentTime).toFixed(4)
+        });
+
+        // Handle edge case: note time is in the past or very close
+        const timeDelta = absoluteTime - currentTime;
+        if (timeDelta <= 0.003) {
+            absoluteTime = currentTime + 0.01; // Nudge 10ms into future
+        }
+
+        // Schedule via SchedulerService
+        if (absoluteTime > currentTime) {
+            const duration = (note.gateDuration ?? note.duration ?? 1) * secondsPerStep;
+            this.schedulerService.scheduleNote(instrumentId, note, absoluteTime, duration);
+            console.log('✅ Note scheduled for immediate playback');
+        } else {
+            console.log('⚠️ Note time in past, skipping');
+        }
     }
 }

@@ -36,6 +36,7 @@ import NavigationHeader from './components/layout/NavigationHeader';
 import ProjectLoadingScreen from './components/common/ProjectLoadingScreen';
 import ProjectTitleModal from './components/common/ProjectTitleModal';
 import PresetLibraryPanel from './features/preset_library/PresetLibraryPanel';
+import PerformanceTestPanel from './components/PerformanceTestPanel';
 
 // Styles
 import './components/common/WelcomeScreen.css';
@@ -49,6 +50,8 @@ const AdminPanel = lazy(() => import('./pages/AdminPanel'));
 const ProjectsPage = lazy(() => import('./pages/ProjectsPage'));
 const MediaPanel = lazy(() => import('./features/media_panel/MediaPanel'));
 const RenderPage = lazy(() => import('./pages/RenderPage'));
+const TransportDebugPage = lazy(() => import('./pages/TransportDebugPage'));
+const AudioPerformanceTest = lazy(() => import('./pages/AudioPerformanceTest'));
 
 // Services
 import { authService } from './services/authService';
@@ -92,17 +95,17 @@ function DAWApp() {
   const setAudioExportPanelOpen = usePanelsStore(state => state.setAudioExportPanelOpen);
   const isPresetLibraryOpen = usePanelsStore(state => state.isPresetLibraryOpen);
   const setPresetLibraryOpen = usePanelsStore(state => state.setPresetLibraryOpen);
+  const isPerformanceTestOpen = usePanelsStore(state => state.isPerformanceTestOpen);
+  const setPerformanceTestOpen = usePanelsStore(state => state.setPerformanceTestOpen);
 
-  // Debug preset library state
-  useEffect(() => {
-    console.log('📚 App.jsx - isPresetLibraryOpen:', isPresetLibraryOpen);
-  }, [isPresetLibraryOpen]);
+  // Performance test and preset library state subscriptions
+  // (No debug logging - production mode)
 
   // ✅ SHORTCUT SYSTEM INITIALIZATION
   useEffect(() => {
     ShortcutManager.init();
 
-    // Register Global Context (Transport, Save, Export)
+    // Register Global Context (Transport, Save, Export, Performance Test)
     ShortcutManager.registerContext('GLOBAL', SHORTCUT_PRIORITY.GLOBAL, {
       onKeyDown: (e) => {
         // Transport handled by TransportManager (migrated separately)
@@ -118,6 +121,13 @@ function DAWApp() {
         if ((e.ctrlKey || e.metaKey) && e.key === 's') {
           e.preventDefault();
           handleSave();
+          return true;
+        }
+
+        // Performance Test - Ctrl+Shift+P
+        if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'P' || e.key === 'p')) {
+          e.preventDefault();
+          setPerformanceTestOpen(prev => !prev);
           return true;
         }
 
@@ -196,7 +206,39 @@ function DAWApp() {
               onClose={() => setShowLoginPrompt(false)}
               onLogin={() => setShowLoginPrompt(false)}
             />
-            <PresetLibraryPanel />
+            {isPresetLibraryOpen && <PresetLibraryPanel />}
+
+            {/* Performance Test Panel - Ctrl+Shift+P */}
+            {isPerformanceTestOpen && (
+              <div style={{
+                position: 'fixed',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                zIndex: 10000,
+                background: 'rgba(0, 0, 0, 0.8)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '2rem'
+              }}>
+                <div style={{
+                  width: '100%',
+                  maxWidth: '1600px',
+                  maxHeight: '90vh',
+                  overflow: 'auto',
+                  background: '#1a1a2e',
+                  borderRadius: '12px',
+                  boxShadow: '0 20px 60px rgba(0, 0, 0, 0.5)'
+                }}>
+                  <PerformanceTestPanel
+                    audioEngine={audioEngineRef.current}
+                    onClose={() => setPerformanceTestOpen(false)}
+                  />
+                </div>
+              </div>
+            )}
 
             <div
               className="app-container"
@@ -232,7 +274,7 @@ function DAWApp() {
         // Handle persisted idle state
         return <StartupScreen onStart={initializeAudioSystem} />;
     }
-  }, [engineStatus, engineError, initializeAudioSystem, isExportPanelOpen, isAudioExportPanelOpen, setAudioExportPanelOpen, showLoginPrompt, showProjectTitleModal, handleSave, currentProjectId, handleProjectSelect, handleNewProject, handleEditTitle, isLoadingProject, loadingProjectTitle, currentProjectTitle, saveStatus, lastSavedAt, audioEngineRef, handleTitleSave, setShowLoginPrompt, setShowProjectTitleModal]);
+  }, [engineStatus, engineError, initializeAudioSystem, isExportPanelOpen, isAudioExportPanelOpen, setAudioExportPanelOpen, showLoginPrompt, showProjectTitleModal, handleSave, currentProjectId, handleProjectSelect, handleNewProject, handleEditTitle, isLoadingProject, loadingProjectTitle, currentProjectTitle, saveStatus, lastSavedAt, audioEngineRef, handleTitleSave, setShowLoginPrompt, setShowProjectTitleModal, isPerformanceTestOpen, setPerformanceTestOpen]);
 
   return <>{renderContent()}</>;
 }
@@ -338,6 +380,14 @@ function AppRouter() {
 
       <Route path="/render" element={
         <Suspense fallback={<LoadingScreen />}><RenderPage /></Suspense>
+      } />
+
+      <Route path="/transport-debug" element={
+        <Suspense fallback={<LoadingScreen />}><TransportDebugPage /></Suspense>
+      } />
+
+      <Route path="/performance-test" element={
+        <Suspense fallback={<LoadingScreen />}><AudioPerformanceTest /></Suspense>
       } />
 
       <Route path="*" element={<Navigate to="/" replace />} />

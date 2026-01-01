@@ -1,8 +1,10 @@
+
 // src/features/piano_roll_v5/usePianoRollEngine.js
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { usePlaybackStore } from '@/store/usePlaybackStore';
+import { AudioContextService } from '@/lib/services/AudioContextService';
 import { uiUpdateManager, UPDATE_PRIORITIES, UPDATE_FREQUENCIES } from '@/lib/core/UIUpdateManager.js';
-import { getTimelineController } from '@/lib/core/TimelineControllerSingleton';
+
 
 // --- SABİTLER VE LİMİTLER ---
 const RULER_HEIGHT = 30;
@@ -224,12 +226,13 @@ export function usePianoRollEngine(containerRef, playbackControls = {}) {
             const stepWidth = BASE_STEP_WIDTH * vp.zoomX;
             const step = Math.floor(worldX / stepWidth);
 
-            // ✅ UNIFIED TIMELINE CONTROL: Use TimelineController for consistent behavior
+            // ✅ UNIFIED TIMELINE CONTROL: Use TransportController for consistent behavior
             try {
-                const timelineController = getTimelineController();
-                timelineController.seekTo(step);
+                // Use the new TransportController via AudioContextService
+                const transportController = AudioContextService.getTransportController();
+                transportController.jumpToStep(step, { updateUI: true });
             } catch (error) {
-                console.warn('TimelineController not available, using fallback:', error);
+                console.warn('TransportController not available, using fallback:', error);
 
                 // Fallback to legacy behavior
                 if (setTransportPosition) {
@@ -237,7 +240,7 @@ export function usePianoRollEngine(containerRef, playbackControls = {}) {
                     const bar = Math.floor(beatPosition / 4);
                     const beat = Math.floor(beatPosition % 4);
                     const tick = Math.floor((beatPosition % 1) * 480);
-                    const transportPos = `${bar + 1}:${beat + 1}:${tick}`;
+                    const transportPos = `${bar + 1}:${beat + 1}:${tick} `;
                     setTransportPosition(transportPos, step);
                 } else {
                     isSettingLoopRef.current = true;

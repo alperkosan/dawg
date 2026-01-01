@@ -295,8 +295,65 @@ export class PlaybackEngine {
   _bindAudioEvents() {
     if (!this.audioEngine?.transport) return;
 
-    // Note: Motor events are now managed internally by manual state updates
-    // This prevents conflicts between manual state and motor events
+    const transport = this.audioEngine.transport;
+
+    // ✅ FIX: Subscribe to transport events for position and state sync
+
+    // Position updates from transport tick events
+    this._transportTickHandler = (data) => {
+      if (!this.state.isPlaying || this.state.isUserScrubbing) return;
+
+      const { step, position } = data;
+      const newPosition = step || this.audioEngine.transport.ticksToSteps(position);
+
+      if (Math.abs(newPosition - this.state.currentPosition) > 0.01) {
+        this.state.currentPosition = newPosition;
+        this.state.lastUpdateTime = Date.now();
+        this._emitPositionUpdate();
+      }
+    };
+
+    // Playback state synchronization
+    this._transportStartHandler = () => {
+      if (!this.state.isPlaying) {
+        this.state.isPlaying = true;
+        this.state.playbackState = PLAYBACK_STATES.PLAYING;
+        this._emitStateChange('transport-start');
+      }
+    };
+
+    this._transportStopHandler = () => {
+      if (this.state.isPlaying) {
+        this.state.isPlaying = false;
+        this.state.playbackState = PLAYBACK_STATES.STOPPED;
+        this._emitStateChange('transport-stop');
+      }
+    };
+
+    this._transportPauseHandler = () => {
+      if (this.state.isPlaying) {
+        this.state.isPlaying = false;
+        this.state.playbackState = PLAYBACK_STATES.PAUSED;
+        this._emitStateChange('transport-pause');
+      }
+    };
+
+    // Loop restart handling
+    this._transportLoopHandler = (data) => {
+      // Reset position to loop start on loop restart
+      const loopStartStep = this.audioEngine.transport.ticksToSteps(data.toTick || 0);
+      this.state.currentPosition = loopStartStep;
+      this._emitPositionUpdate();
+    };
+
+    // Bind all event listeners
+    transport.on('tick', this._transportTickHandler);
+    transport.on('start', this._transportStartHandler);
+    transport.on('stop', this._transportStopHandler);
+    transport.on('pause', this._transportPauseHandler);
+    transport.on('loop', this._transportLoopHandler);
+
+    console.log('🎵 PlaybackEngine: Bound to transport events');
   }
 
   // =================== EVENT SYSTEM ===================
@@ -389,6 +446,30 @@ export class PlaybackEngine {
    */
   destroy() {
     this._stopPositionTracking();
+
+    // ✅ FIX: Clean up transport event listeners
+    if (this.audioEngine?.transport) {
+      const transport = this.audioEngine.transport;
+
+      if (this._transportTickHandler) {
+        transport.off('tick', this._transportTickHandler);
+      }
+      if (this._transportStartHandler) {
+        transport.off('start', this._transportStartHandler);
+      }
+      if (this._transportStopHandler) {
+        transport.off('stop', this._transportStopHandler);
+      }
+      if (this._transportPauseHandler) {
+        transport.off('pause', this._transportPauseHandler);
+      }
+      if (this._transportLoopHandler) {
+        transport.off('loop', this._transportLoopHandler);
+      }
+
+      console.log('🎵 PlaybackEngine: Unbound from transport events');
+    }
+
     this.subscribers.clear();
     this.audioEngine = null;
   }

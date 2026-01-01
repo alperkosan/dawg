@@ -38,6 +38,7 @@ export const usePanelsStore = create((set, get) => ({
   isInstrumentPickerOpen: false,
   isPresetLibraryOpen: false,
   isCoProducerOpen: false,
+  isPerformanceTestOpen: false, // ✅ PHASE 1: Performance test panel
 
   // --- EYLEMLER (ACTIONS) ---
 
@@ -54,6 +55,8 @@ export const usePanelsStore = create((set, get) => ({
   },
   setCoProducerOpen: (isOpen) => set({ isCoProducerOpen: isOpen }),
   toggleCoProducer: () => set(state => ({ isCoProducerOpen: !state.isCoProducerOpen })),
+  setPerformanceTestOpen: (isOpen) => set({ isPerformanceTestOpen: isOpen }),
+  togglePerformanceTest: () => set(state => ({ isPerformanceTestOpen: !state.isPerformanceTestOpen })),
 
   // Minimize edilmiş panellerin listesini güncelleyen özel fonksiyon.
   _updateMinimizedPanels: () => {

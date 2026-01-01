@@ -19,6 +19,89 @@ class WasmAudioEngine {
         // Instrument tracking
         this.instruments = new Map();
         this.effects = new Map();
+
+        // ✅ PHASE 1: SharedArrayBuffer for direct position access
+        // Zero-latency UI updates via direct memory read
+        this.sharedBuffer = null;
+        this.OFFSETS = {
+            POSITION_STEP: 0,  // Current step position
+            POSITION_BBT: 1,   // Packed BBT (bar*1000 + beat*100 + tick)
+            IS_PLAYING: 2,     // 0 = stopped, 1 = playing
+            BPM: 3,            // Current BPM
+            LOOP_START: 4,     // Loop start position (steps)
+            LOOP_END: 5,       // Loop end position (steps)
+            LOOP_ENABLED: 6,   // 0 = disabled, 1 = enabled
+        };
+
+        this._initSharedBuffer();
+    }
+
+    /**
+     * Initialize SharedArrayBuffer for zero-latency position updates
+     * @private
+     */
+    _initSharedBuffer() {
+        try {
+            // Allocate 64 bytes (16 int32 values)
+            const sab = new SharedArrayBuffer(64);
+            this.sharedBuffer = new Int32Array(sab);
+
+            // Initialize with defaults
+            this.sharedBuffer[this.OFFSETS.POSITION_STEP] = 0;
+            this.sharedBuffer[this.OFFSETS.POSITION_BBT] = 0; // 1.1.00
+            this.sharedBuffer[this.OFFSETS.IS_PLAYING] = 0;
+            this.sharedBuffer[this.OFFSETS.BPM] = 140;
+            this.sharedBuffer[this.OFFSETS.LOOP_START] = 0;
+            this.sharedBuffer[this.OFFSETS.LOOP_END] = 64;
+            this.sharedBuffer[this.OFFSETS.LOOP_ENABLED] = 1;
+
+            console.log('✅ SharedArrayBuffer initialized (64 bytes)');
+        } catch (error) {
+            console.warn('⚠️ SharedArrayBuffer not available:', error);
+            // Fallback: use regular array (not shared, but still works)
+            this.sharedBuffer = new Int32Array(16);
+        }
+    }
+
+    /**
+     * Get SharedArrayBuffer for direct position access
+     * Used by useWasmPosition hook for zero-latency updates
+     * @returns {Int32Array}
+     */
+    getSharedBuffer() {
+        return this.sharedBuffer;
+    }
+
+    /**
+     * Update position in shared buffer (called from transport/WASM)
+     * @param {number} step - Current step position
+     * @param {number} bar - Current bar (0-indexed)
+     * @param {number} beat - Current beat (0-indexed)
+     * @param {number} tick - Current tick (0-99)
+     * @param {boolean} isPlaying - Is transport playing
+     * @param {number} bpm - Current BPM
+     */
+    updatePositionBuffer(step, bar, beat, tick, isPlaying, bpm) {
+        if (!this.sharedBuffer) return;
+
+        this.sharedBuffer[this.OFFSETS.POSITION_STEP] = step;
+        this.sharedBuffer[this.OFFSETS.POSITION_BBT] = bar * 1000 + beat * 100 + tick;
+        this.sharedBuffer[this.OFFSETS.IS_PLAYING] = isPlaying ? 1 : 0;
+        this.sharedBuffer[this.OFFSETS.BPM] = bpm;
+    }
+
+    /**
+     * Update loop settings in shared buffer
+     * @param {number} start - Loop start (steps)
+     * @param {number} end - Loop end (steps)
+     * @param {boolean} enabled - Is loop enabled
+     */
+    updateLoopBuffer(start, end, enabled) {
+        if (!this.sharedBuffer) return;
+
+        this.sharedBuffer[this.OFFSETS.LOOP_START] = start;
+        this.sharedBuffer[this.OFFSETS.LOOP_END] = end;
+        this.sharedBuffer[this.OFFSETS.LOOP_ENABLED] = enabled ? 1 : 0;
     }
 
     /**

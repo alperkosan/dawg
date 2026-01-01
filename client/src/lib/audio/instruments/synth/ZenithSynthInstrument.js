@@ -66,6 +66,8 @@ export class ZenithSynthInstrument extends BaseInstrument {
         }
 
         const time = startTime !== null ? startTime : this.audioContext.currentTime;
+        console.log(`🎹 ZenithSynthInstrument.noteOn: ${this.name}, note=${midiNote}, vel=${velocity}, time=${time.toFixed(3)}, voices=${this.voices.size}`);
+
 
         try {
             const isMono = this.preset?.voiceMode === 'mono';
@@ -133,9 +135,12 @@ export class ZenithSynthInstrument extends BaseInstrument {
                 const voice = new ZenithSynth(this.audioContext);
                 voice.loadPreset(this.preset);
                 voice.masterGain.connect(this.masterGain);
+                console.log(`🎵 Creating ZenithSynth voice: note=${midiNote}, masterGain connected to ${this.masterGain ? 'output' : 'NULL'}`);
                 voice.noteOn(midiNote, velocity, time, extendedParams);
 
                 this.voices.set(midiNote, voice);
+                console.log(`✅ Voice created and stored. Total voices: ${this.voices.size}`);
+
             }
 
             // Track note

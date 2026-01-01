@@ -1,3 +1,5 @@
+import * as __wbg_star0 from './dawg-utils.js';
+
 let wasm;
 
 let cachedUint8ArrayMemory0 = null;
@@ -1694,6 +1696,7 @@ function __wbg_get_imports() {
         table.set(offset + 3, false);
         ;
     };
+    imports['./dawg-utils.js'] = __wbg_star0;
 
     return imports;
 }

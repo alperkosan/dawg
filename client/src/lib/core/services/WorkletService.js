@@ -17,9 +17,9 @@ import { logger, NAMESPACES } from '../../utils/debugLogger.js';
 const DEFAULT_WORKLETS = [
     { path: '/worklets/text-encoder-polyfill.js', name: 'text-encoder-polyfill' },
     { path: '/worklets/instrument-processor.js', name: 'instrument-processor' },
-    { path: '/worklets/mixer-processor.js', name: 'mixer-processor' },
+    { path: '/worklets/mixer-processor.js', name: 'mixer-processor', isModule: true },
     { path: '/worklets/analysis-processor.js', name: 'analysis-processor' },
-    { path: '/worklets/wasm-sampler-processor.js', name: 'wasm-sampler-processor' }
+    { path: '/worklets/wasm-sampler-processor.js', name: 'wasm-sampler-processor', isModule: true }
 ];
 
 export class WorkletService {
@@ -57,7 +57,11 @@ export class WorkletService {
         }
 
         try {
-            const results = await this.workletManager.loadMultipleWorklets(workletConfigs);
+            const results = await this.workletManager.loadMultipleWorklets(workletConfigs.map(config => ({
+                path: config.path,
+                name: config.name,
+                options: { isModule: config.isModule, ...config.options }
+            })));
 
             const successful = results.filter(r => r.status === 'fulfilled').length;
             const failed = results.length - successful;

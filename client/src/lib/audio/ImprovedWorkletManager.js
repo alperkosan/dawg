@@ -100,8 +100,8 @@ export class ImprovedWorkletManager {
         }
 
         // Verify it's a valid native context
-        const isValidContext = 
-            this.audioContext instanceof AudioContext || 
+        const isValidContext =
+            this.audioContext instanceof AudioContext ||
             this.audioContext instanceof BaseAudioContext ||
             (window.webkitAudioContext && this.audioContext instanceof window.webkitAudioContext);
 
@@ -138,7 +138,8 @@ export class ImprovedWorkletManager {
             this.log(`📦 Loading AudioWorklet: ${processorName} from ${workletPath}`);
 
             // Load with timeout
-            const loadPromise = this.audioContext.audioWorklet.addModule(workletPath);
+            const addModuleOptions = options.isModule ? { type: 'module' } : {};
+            const loadPromise = this.audioContext.audioWorklet.addModule(workletPath, addModuleOptions);
             const timeoutPromise = new Promise((_, reject) => {
                 setTimeout(() => reject(new Error('Worklet load timeout')), options.timeout || 10000);
             });
@@ -164,7 +165,7 @@ export class ImprovedWorkletManager {
 
     async loadMultipleWorklets(workletConfigs) {
         const results = await Promise.allSettled(
-            workletConfigs.map(config => 
+            workletConfigs.map(config =>
                 this.loadWorklet(config.path, config.name, config.options)
             )
         );
@@ -175,7 +176,7 @@ export class ImprovedWorkletManager {
         this.log(`📦 Worklet batch load complete: ${successful}/${workletConfigs.length} successful`);
 
         if (failed.length > 0) {
-            this.warn(`⚠️ ${failed.length} worklets failed to load:`, 
+            this.warn(`⚠️ ${failed.length} worklets failed to load:`,
                 failed.map(r => r.reason?.message).join(', '));
         }
 
@@ -391,7 +392,7 @@ export class ImprovedWorkletManager {
                 const nodeData = await this.createWorkletNode(processorName, options);
                 pool.push(nodeData);
             } catch (error) {
-                this.warn(`⚠️ Failed to create node ${i+1}/${poolSize} for pool:`, error);
+                this.warn(`⚠️ Failed to create node ${i + 1}/${poolSize} for pool:`, error);
             }
         }
 

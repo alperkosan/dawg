@@ -160,13 +160,14 @@ export class SchedulerService {
     }
 
     /**
-     * Schedule a pattern's notes
+     * Schedule a pattern for playback
      * @param {string} patternId - Pattern ID
-     * @param {Object} patternData - Pattern data with notes per instrument
-     * @param {number} startTime - Start time in audio context
+     * @param {Object} patternData - Pattern data with notes
+     * @param {number} startTime - Audio context time to start
      * @param {number} bpm - Beats per minute
+     * @param {number} [skipBeforeStep=0] - Skip notes before this step (for resume/jump)
      */
-    schedulePattern(patternId, patternData, startTime, bpm) {
+    schedulePattern(patternId, patternData, startTime, bpm, skipBeforeStep = 0) {
         if (!patternData || !patternData.data) {
             logger.warn(NAMESPACES.AUDIO, `No pattern data for ${patternId}`);
             return;
@@ -174,19 +175,61 @@ export class SchedulerService {
 
         const stepDuration = 60 / bpm / 4; // 16th note duration
 
+        // ✅ DEBUG: Log scheduling start
+        logger.debug(NAMESPACES.AUDIO, `📅 Scheduling pattern ${patternId}:`, {
+            startTime: startTime.toFixed(3),
+            currentTime: this.audioContext?.currentTime.toFixed(3),
+            bpm,
+            stepDuration: stepDuration.toFixed(3),
+            skipBeforeStep
+        });
+
+        // ✅ FIX: Filter notes to skip already-played steps (for resume/jump)
+        let scheduledCount = 0;
+
         // Schedule notes for each instrument
         Object.entries(patternData.data).forEach(([instrumentId, notes]) => {
             if (!Array.isArray(notes)) return;
 
             notes.forEach(note => {
-                const noteStartTime = startTime + (note.step * stepDuration);
+                // ✅ DEBUG: Log the actual note structure
+                if (scheduledCount === 0) {
+                    logger.debug(NAMESPACES.AUDIO, `📋 Note object structure:`, note);
+                    logger.debug(NAMESPACES.AUDIO, `📋 Note keys:`, Object.keys(note));
+                }
+
+                // ✅ FIX: Pattern data uses `time` property for step position!
+                const noteStep = parseFloat(note.time) || 0;
+
+                // ✅ Skip notes before current position (for resume/jump)
+                if (noteStep < skipBeforeStep) {
+                    return;
+                }
+
+                // ✅ FIX: Adjust start time relative to the skipBeforeStep
+                // If we are skipping to step 40, then step 40 should play at startTime (NOW)
+                // So we subtract the skipped time from the calculation
+                const relativeStep = noteStep - skipBeforeStep;
+                const noteStartTime = startTime + (relativeStep * stepDuration);
                 const noteDuration = (note.duration || 1) * stepDuration;
 
+                // ✅ DEBUG: Log first few scheduled notes
+                if (scheduledCount < 3) {
+                    logger.debug(NAMESPACES.AUDIO, `  📝 Note ${scheduledCount + 1}:`, {
+                        instrumentId,
+                        step: noteStep,
+                        pitch: note.pitch,
+                        noteStartTime: noteStartTime.toFixed(3),
+                        noteDuration: noteDuration.toFixed(3)
+                    });
+                }
+
                 this.scheduleNote(instrumentId, note, noteStartTime, noteDuration);
+                scheduledCount++;
             });
         });
 
-        logger.debug(NAMESPACES.AUDIO, `Scheduled pattern ${patternId}`);
+        logger.debug(NAMESPACES.AUDIO, `Scheduled pattern ${patternId} (${scheduledCount} notes, from step ${skipBeforeStep})`);
     }
 
     /**
@@ -308,6 +351,19 @@ export class SchedulerService {
         const currentTime = this.audioContext.currentTime;
         const lookAheadEnd = currentTime + this.lookAheadTime;
 
+        // ✅ DEBUG: Log tick state
+        /*
+        const pendingEvents = Array.from(this.scheduledEvents.values()).filter(e => !e.cancelled && !e.executed);
+        if (pendingEvents.length > 0) {
+            logger.debug(NAMESPACES.AUDIO, `⏰ Scheduler tick:`, {
+                currentTime: currentTime.toFixed(3),
+                lookAheadEnd: lookAheadEnd.toFixed(3),
+                pendingEvents: pendingEvents.length,
+                nextEventTime: pendingEvents[0]?.time.toFixed(3),
+                timeDiff: pendingEvents[0] ? (pendingEvents[0].time - currentTime).toFixed(3) : 'N/A'
+            });
+        }*/
+
         // Process events that should be triggered
         this.scheduledEvents.forEach((event, eventId) => {
             if (event.cancelled || event.executed) {
@@ -339,10 +395,32 @@ export class SchedulerService {
 
         switch (event.type) {
             case ScheduledEventType.NOTE_ON: {
+                // ✅ DEBUG: Log instrument lookup
+                const availableInstruments = Array.from(this.instruments?.keys() || []);
+                logger.debug(NAMESPACES.AUDIO, `🎵 Attempting to trigger note:`, {
+                    instrumentId,
+                    pitch: note.pitch,
+                    velocity: note.velocity,
+                    availableInstruments: availableInstruments.length,
+                    instrumentIds: availableInstruments
+                });
+
                 const instrument = this.instruments?.get(instrumentId);
-                if (instrument && typeof instrument.triggerNote === 'function') {
-                    instrument.triggerNote(note.pitch, note.velocity || 0.8, event.time);
+
+                if (!instrument) {
+                    logger.warn(NAMESPACES.AUDIO, `❌ Instrument not found: ${instrumentId}`, {
+                        availableInstruments
+                    });
+                    return;
                 }
+
+                if (typeof instrument.triggerNote !== 'function') {
+                    logger.warn(NAMESPACES.AUDIO, `❌ Instrument ${instrumentId} has no triggerNote method`);
+                    return;
+                }
+
+                logger.debug(NAMESPACES.AUDIO, `✅ Triggering note on ${instrumentId}: pitch=${note.pitch}, velocity=${note.velocity}`);
+                instrument.triggerNote(note.pitch, note.velocity || 0.8, event.time);
                 break;
             }
 

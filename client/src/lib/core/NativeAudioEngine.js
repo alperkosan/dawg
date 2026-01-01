@@ -433,6 +433,95 @@ export class NativeAudioEngine {
         };
     }
 
+    // =================== ✅ NEW: AUDIO QUALITY SETTINGS ===================
+
+    /**
+     * Apply audio quality settings from the Audio Quality Settings panel
+     * This is the central method for configuring audio engine timing and quality
+     * @param {Object} settings - Settings from AudioQualityManager
+     */
+    applyQualitySettings(settings) {
+        if (!this.isInitialized) {
+            logger.warn(NAMESPACES.AUDIO, 'Cannot apply quality settings: engine not initialized');
+            return { success: false, error: 'Engine not initialized' };
+        }
+
+        logger.info(NAMESPACES.AUDIO, '🎛️ Applying audio quality settings:', settings);
+
+        try {
+            // ✅ Apply PPQ (Pulses Per Quarter Note) to transport
+            if (settings.ppq && this.transport) {
+                this.transport.ppq = settings.ppq;
+                // Recalculate derived values
+                this.transport.ticksPerStep = settings.ppq / 4; // 16th notes
+                this.transport.ticksPerBar = settings.ppq * this.transport.timeSignature[0];
+                logger.info(NAMESPACES.AUDIO, `PPQ updated to ${settings.ppq} (ticksPerStep: ${this.transport.ticksPerStep})`);
+            }
+
+            // ✅ Apply Lookahead Time to transport's lookahead scheduler
+            if (settings.lookaheadTime && this.transport) {
+                if (this.transport.lookaheadScheduler) {
+                    this.transport.lookaheadScheduler.setLookahead(settings.lookaheadTime);
+                }
+                this.transport.lookAhead = settings.lookaheadTime * 1000; // Convert to ms
+                logger.info(NAMESPACES.AUDIO, `Lookahead updated to ${settings.lookaheadTime * 1000}ms`);
+            }
+
+            // ✅ Apply Schedule Ahead Time to transport
+            if (settings.scheduleAheadTime && this.transport) {
+                this.transport.scheduleAheadTime = settings.scheduleAheadTime;
+                logger.info(NAMESPACES.AUDIO, `Schedule ahead time updated to ${settings.scheduleAheadTime * 1000}ms`);
+            }
+
+            // ✅ Apply Sync Interval to transport controller (if available)
+            if (settings.syncInterval) {
+                // This is used by TransportController for SAB sync frequency
+                this._qualitySyncInterval = settings.syncInterval;
+                logger.info(NAMESPACES.AUDIO, `Sync interval set to ${settings.syncInterval}ms`);
+            }
+
+            // ✅ Apply Max Polyphony
+            if (settings.maxPolyphony) {
+                this.settings.maxPolyphony = settings.maxPolyphony;
+                // Notify instruments of polyphony limit
+                this.instruments.forEach((instrument) => {
+                    if (typeof instrument.setMaxPolyphony === 'function') {
+                        instrument.setMaxPolyphony(settings.maxPolyphony);
+                    }
+                });
+                logger.info(NAMESPACES.AUDIO, `Max polyphony set to ${settings.maxPolyphony}`);
+            }
+
+            // ✅ Store current quality settings
+            this._currentQualitySettings = { ...settings };
+
+            logger.info(NAMESPACES.AUDIO, '✅ Audio quality settings applied successfully');
+            return { success: true };
+
+        } catch (error) {
+            logger.error(NAMESPACES.AUDIO, 'Failed to apply quality settings:', error);
+            return { success: false, error: error.message };
+        }
+    }
+
+    /**
+     * Get current quality settings
+     * @returns {Object} Current quality settings
+     */
+    getQualitySettings() {
+        if (this._currentQualitySettings) {
+            return { ...this._currentQualitySettings };
+        }
+
+        // Return defaults from transport if no custom settings applied
+        return {
+            ppq: this.transport?.ppq || 96,
+            lookaheadTime: (this.transport?.lookAhead || 120) / 1000,
+            scheduleAheadTime: this.transport?.scheduleAheadTime || 0.15,
+            maxPolyphony: this.settings?.maxPolyphony || 32
+        };
+    }
+
     // =================== ✅ ENHANCED: PATTERN MANAGEMENT ===================
 
     setActivePattern(patternId) {
@@ -1577,7 +1666,9 @@ export class NativeAudioEngine {
                     this.unifiedMixer.connectToChannel(insert.output, wasmChannelIdx);
 
                     if (import.meta.env.DEV) {
-                        console.log(`🔗 WASM Hybrid Route: ${instrumentId} -> Insert(${insertId}) -> Channel ${wasmChannelIdx}`);
+                        console.log(`🔗 WASM Hybrid Route: ${instrumentId} -> Insert(${insertId}) -> WASM Channel ${wasmChannelIdx}`);
+                        // Check if insert.output is active
+                        if (insert.output.gain.value === 0) console.warn(`⚠️ Warning: MixerInsert ${insertId} output gain is 0!`);
                     }
                 }
 

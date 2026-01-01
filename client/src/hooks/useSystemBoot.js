@@ -5,8 +5,6 @@ import { AudioContextService } from '../lib/services/AudioContextService';
 import { NativeAudioEngineFacade } from '../lib/core/NativeAudioEngineFacade';
 import { EffectFactory } from '../lib/audio/effects/EffectFactory';
 import { visualizationEngine } from '@/features/visualization/engine/VisualizationEngine';
-import TimelineControllerSingleton from '../lib/core/TimelineControllerSingleton';
-import TransportManagerSingleton from '../lib/core/TransportManagerSingleton';
 import { usePlaybackStore } from '../store/usePlaybackStore';
 import { useMixerStore } from '../store/useMixerStore';
 import { useAuthStore } from '../store/useAuthStore';
@@ -119,9 +117,6 @@ export const useSystemBoot = () => {
             if (engine.audioContext) {
                 visualizationEngine.init(engine.audioContext);
             }
-
-            TimelineControllerSingleton.getInstance();
-            TransportManagerSingleton.getInstance();
 
             setEngineStatus('ready');
             sessionStorage.setItem('dawg_engine_status', 'ready');

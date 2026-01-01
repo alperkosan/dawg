@@ -111,14 +111,9 @@ export class PlaybackController extends SimpleEventEmitter {
     transport.on('stop', () => this._handleMotorEvent('stopped'));
     transport.on('pause', () => this._handleMotorEvent('paused'));
 
-    // ✅ CRITICAL FIX: Position updates via Transport tick event ONLY
-    // Transport tick is throttled to 60fps and sample-accurate
-    // No need for separate UIUpdateManager subscription (was causing double updates)
-    transport.on('tick', () => {
-      if (this.state.isPlaying && !this.state.isUserScrubbing) {
-        this._updatePositionFromMotor();
-      }
-    });
+    // ✅ OPTIMIZATION: Removed transport.on('tick') callback
+    // Position updates are now handled by TransportManager's unified UIUpdateManager subscription
+    // This eliminates duplicate ticksToSteps() calculations per frame
   }
 
   _handleMotorEvent(eventType) {

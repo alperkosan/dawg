@@ -10,7 +10,7 @@ import { AudioEngineGlobal } from '@/lib/core/AudioEngineGlobal';
 import { storeManager } from './StoreManager';
 import { usePlaybackStore } from './usePlaybackStore';
 import { audioAssetManager } from '@/lib/audio/AudioAssetManager.js';
-import { getTimelineController } from '@/lib/core/TimelineControllerSingleton.js';
+
 
 // ============================================================================
 // HELPERS - Arrangement Tracks & Clips
@@ -566,14 +566,19 @@ export const useArrangementStore = create(arrangementStoreOrchestrator((set, get
       }
     };
 
+    // ✅ FIX: Auto-set activePatternId if this is the first pattern or no active pattern
+    const shouldSetActive = !state.activePatternId || Object.keys(state.patterns).length === 0;
+
     set(state => ({
       patterns: { ...state.patterns, [newPatternId]: newPattern },
       patternOrder: [...state.patternOrder, newPatternId],
       // ✅ FIX: Update nextPatternNumber to be at least nextNumber + 1
-      nextPatternNumber: Math.max(state.nextPatternNumber, nextNumber + 1)
+      nextPatternNumber: Math.max(state.nextPatternNumber, nextNumber + 1),
+      // ✅ FIX: Auto-select first pattern
+      ...(shouldSetActive ? { activePatternId: newPatternId } : {})
     }));
 
-    console.log(`✅ Created pattern: ${newPatternId} (nextPatternNumber: ${Math.max(state.nextPatternNumber, nextNumber + 1)})`);
+    console.log(`✅ Created pattern: ${newPatternId} (nextPatternNumber: ${Math.max(state.nextPatternNumber, nextNumber + 1)}, active: ${shouldSetActive})`);
     return newPatternId;
   },
 
@@ -1085,20 +1090,22 @@ export const useArrangementStore = create(arrangementStoreOrchestrator((set, get
     });
     get().pushHistory({ type: 'ADD_ARRANGEMENT_LOOP_REGION', regionId: region.id });
 
-    // Sync with TimelineController if available
+    // Sync with TransportController if available
     try {
-      const timelineController = getTimelineController();
-      if (timelineController) {
+      const transportController = AudioContextService.getTransportController();
+      if (transportController) {
         // Convert beats to steps (1 beat = 4 steps)
         const startInSteps = startTime * 4;
         const endInSteps = endTime * 4;
-        await timelineController.setLoopRange(startInSteps, endInSteps);
-        if (!timelineController.state.loopEnabled) {
-          await timelineController.setLoopEnabled(true);
+        transportController.setLoopPoints(startInSteps, endInSteps);
+
+        const state = transportController.getState();
+        if (!state.loopEnabled) {
+          transportController.setLoopEnabled(true);
         }
       }
     } catch (e) {
-      // TimelineController not initialized
+      // TransportController not initialized
     }
 
     return region.id;
@@ -1119,19 +1126,21 @@ export const useArrangementStore = create(arrangementStoreOrchestrator((set, get
     });
     get().pushHistory({ type: 'UPDATE_ARRANGEMENT_LOOP_REGION', regionId, oldRegion, updates });
 
-    // Sync with TimelineController if this is active loop
+    // Sync with TransportController if this is active loop
     try {
-      const timelineController = getTimelineController();
-      if (timelineController && timelineController.state.loopEnabled) {
+      const transportController = AudioContextService.getTransportController();
+      const state = transportController.getState();
+
+      if (transportController && state.loopEnabled) {
         const updatedRegion = get().arrangementLoopRegions.find(r => r.id === regionId);
         if (updatedRegion) {
           const startInSteps = updatedRegion.startTime * 4;
           const endInSteps = updatedRegion.endTime * 4;
-          await timelineController.setLoopRange(startInSteps, endInSteps);
+          transportController.setLoopPoints(startInSteps, endInSteps);
         }
       }
     } catch (e) {
-      // TimelineController not initialized
+      // TransportController not initialized
     }
   },
 

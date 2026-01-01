@@ -34,10 +34,28 @@ export class MixerInsert {
   constructor(audioContext, insertId, label = '') {
     this.audioContext = audioContext;
     this.insertId = insertId;
-    this.label = label;
+    this.label = label || insertId;
+
+    // 🔍 DEBUG: Signal flow monitoring
+    this._debugMonitorCount = 0;
+    this._debugMonitorInterval = null;
 
     // Audio graph nodes
     this.input = this.audioContext.createGain();       // Instruments buraya bağlanır
+    this.input.gain.value = 1.0;
+
+    // 🔍 DEBUG: Monitor input signal every 2 seconds
+    if (insertId !== 'master') {
+      this._debugMonitorInterval = setInterval(() => {
+        this._debugMonitorCount++;
+        if (this._debugMonitorCount % 4 === 0 && this._analyzer) { // Every ~8 seconds
+          const level = this.getMeterLevel();
+          if (level > 0.001 || this._debugMonitorCount === 4) {
+            console.log(`🔍 MixerInsert[${insertId}]: Signal level=${level.toFixed(6)}, instruments=${this.instruments.size}`);
+          }
+        }
+      }, 2000);
+    }
     this.gainNode = this.audioContext.createGain();    // Volume control
     this.panNode = this.audioContext.createStereoPanner(); // Pan control
     this.output = this.audioContext.createGain();      // Master bus'a gider
@@ -782,9 +800,23 @@ export class MixerInsert {
           const input = effect.node.inputNode || effect.node;
           const output = effect.node.outputNode || effect.node;
 
-          currentNode.connect(input);
-          currentNode = output;
-          connectedEffects++;
+          // Robust validation to prevent crashes if effect node is invalid
+          // Check if input is a valid AudioNode or AudioParam (has connect or setValueAtTime)
+          const isValidInput = input && (
+            typeof input.connect === 'function' ||
+            typeof input.setValueAtTime === 'function' ||
+            input instanceof AudioNode
+          );
+
+          if (isValidInput) {
+            currentNode.connect(input);
+            currentNode = output;
+            connectedEffects++;
+          } else {
+            if (isDev) {
+              console.warn(`⚠️ Invalid effect node for ${effectId}, skipping...`, input);
+            }
+          }
         }
       }
 

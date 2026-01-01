@@ -44,9 +44,10 @@ class WasmSamplerProcessor extends AudioWorkletProcessor {
                 this.port.postMessage({ type: 'pong' });
             } else if (type === 'init-wasm') {
                 console.log('⚙️ Initializing Wasm in Processor...', data ? 'with Data' : 'NO DATA');
-                if (data.wasmBytes) {
-                    console.log(`⚙️ Compiling Wasm bytes in Worklet (${data.wasmBytes.byteLength})...`);
-                    const module = await WebAssembly.compile(data.wasmBytes);
+                const wasmBytes = data.wasmBytes || data.wasmArrayBuffer;
+                if (wasmBytes) {
+                    console.log(`⚙️ Compiling Wasm bytes in Worklet (${wasmBytes.byteLength})...`);
+                    const module = await WebAssembly.compile(wasmBytes);
                     await this.initWasm(module);
                 } else if (data.module) {
                     // Fallback if module is somehow passed

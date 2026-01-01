@@ -192,9 +192,9 @@ class BaseSingleton {
 ```
 
 **Singletons**:
-1. **PlaybackControllerSingleton** - Unified playback state management
-2. **TimelineControllerSingleton** - Timeline control (legacy pattern)
-3. **TransportManagerSingleton** - Transport coordination
+1. **PlaybackControllerSingleton** - Unified playback state management (Deleted - Functionality moved to `TransportController` & `usePlaybackStore`)
+2. **TimelineControllerSingleton** - Timeline control (Deleted - Functionality merged into `TransportController`)
+3. **TransportManagerSingleton** - Transport coordination (Deleted - Functionality merged into `TransportController`)
 
 #### **PlaybackController** - **State Management**
 

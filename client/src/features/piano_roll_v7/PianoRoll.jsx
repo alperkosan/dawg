@@ -19,11 +19,9 @@ import { useInstrumentsStore } from '@/store/useInstrumentsStore';
 import { usePlaybackStore } from '@/store/usePlaybackStore';
 import { useArrangementStore } from '@/store/useArrangementStore';
 import { AutomationLane } from './types/AutomationLane';
-import { getTimelineController } from '@/lib/core/TimelineControllerSingleton';
+import { getAutomationManager } from '@/lib/automation/AutomationManager';
 import { getToolManager, TOOL_TYPES, TOOL_SHORTCUTS } from './lib/tools/PianoRollToolManager';
 import ShortcutManager, { SHORTCUT_PRIORITY } from '@/lib/core/ShortcutManager';
-import { getTransportManagerSync } from '@/lib/core/TransportManagerSingleton';
-import { getAutomationManager } from '@/lib/automation/AutomationManager';
 import { getScaleSystem } from '@/lib/music/ScaleSystem';
 import EventBus from '@/lib/core/EventBus.js';
 import { getPreviewManager } from '@/lib/audio/preview';
@@ -1112,16 +1110,17 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
         if (!containerRef.current || !engine.dimensions.stepWidth) return;
 
         try {
-            const timelineController = getTimelineController();
+            const transportController = AudioContextService.getTransportController();
 
             // Calculate ruler element bounds (top 30px of container)
             // ✅ Custom position calculation for piano roll (accounts for scroll/zoom)
             // Use engineRef to always get the LATEST engine state (avoid stale closure)
-            const calculatePosition = (mouseX, mouseY) => {
+            const calculatePosition = (mouseX, mouseY, e) => {
                 const { viewport, dimensions } = engineRef.current;
 
                 // ✅ IGNORE RULER: If mouse is in ruler area (0-30px), return null
                 // This prevents TimelineController from reacting to ruler clicks/scrubs
+                // mouseY is relative to element (client - top)
                 if (mouseY <= 30) return null;
 
                 // We need to translate mouseX (from element rect) to canvas coordinates
@@ -1143,28 +1142,30 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
             };
 
             // Register piano roll timeline for ghost playhead
-            timelineController.registerTimeline('piano-roll-timeline', {
-                element: containerRef.current,
+            transportController.registerTimeline('piano-roll-timeline', containerRef.current, {
                 stepWidth: engine.dimensions.stepWidth,
                 totalSteps: engine.dimensions.totalSteps,
-                onPositionChange: null, // Position updates handled by playback store
                 enableInteraction: false, // ✅ Disable scrubbing/seeking in Piano Roll grid
                 onGhostPositionChange: (pos) => {
                     setGhostPosition(pos);
+                    // Also trigger redraw if needed
+                    if (pos !== ghostPosition) {
+                        markBackgroundDirty();
+                    }
                 },
-                enableGhostPosition: true,
-                enableRangeSelection: false,
-                calculatePosition // ✅ Custom calculation for viewport scroll/zoom
+                calculatePosition: calculatePosition
             });
 
             console.log('✅ Piano Roll timeline registered');
 
             return () => {
-                timelineController.unregisterTimeline('piano-roll-timeline');
+                const transportController = AudioContextService.getTransportController();
+                transportController.unregisterElement('piano-roll-timeline');
                 console.log('🧹 Piano Roll timeline cleanup');
             };
+
         } catch (error) {
-            console.warn('Failed to register Piano Roll timeline:', error);
+            console.warn('TransportController not available:', error);
         }
         // ✅ FIX: Empty deps - only register once, calculatePosition uses latest engine from scope
         // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -14,9 +14,10 @@ import { useArrangementCanvas, useClipInteraction } from './hooks';
 import { useArrangementStore } from '@/store/useArrangementStore';
 import ShortcutManager, { SHORTCUT_PRIORITY } from '@/lib/core/ShortcutManager';
 import { usePlaybackStore } from '@/store/usePlaybackStore';
+import EventBus from '@/lib/core/EventBus';
 import { usePanelsStore } from '@/store/usePanelsStore';
 import { useProjectAudioStore } from '@/store/useProjectAudioStore';
-import { getTimelineController } from '@/lib/core/TimelineControllerSingleton'; // ✅ Unified transport system
+
 import { AudioContextService } from '@/lib/services/AudioContextService'; // ✅ For audio engine sync
 import { AudioEngineGlobal } from '@/lib/core/AudioEngineGlobal';
 // ✅ PHASE 2: Design Consistency - Using component library
@@ -117,6 +118,8 @@ export function ArrangementPanelV2() {
   const gridCanvasRef = useRef(null);
   const clipsCanvasRef = useRef(null);
   const handlesCanvasRef = useRef(null);
+  // ✅ FIX: Add Playhead Ref
+  const playheadRef = useRef(null);
 
   // ✅ PHASE 1: Store Consolidation - Use unified store
   // Arrangement state (from unified store)
@@ -158,15 +161,15 @@ export function ArrangementPanelV2() {
   const followPlayheadMode = usePlaybackStore(state => state.followPlayheadMode);
   const bpm = usePlaybackStore(state => state.bpm || 140);
 
-  // Transport control via TimelineController
+  // Transport control via TransportController
   const setCursorPosition = useCallback((position) => {
     try {
-      const timelineController = getTimelineController();
+      const transportController = AudioContextService.getTransportController();
       // Convert beats to steps (1 beat = 4 steps in 16th notes)
       const positionInSteps = Math.max(0, position) * 4;
-      timelineController.jumpToPosition(positionInSteps);
+      transportController.jumpToStep(positionInSteps, { updateUI: true });
     } catch (e) {
-      console.warn('TimelineController not initialized:', e);
+      console.warn('TransportController not initialized:', e);
     }
   }, []);
 
@@ -379,7 +382,112 @@ export function ArrangementPanelV2() {
       }
     };
     syncTracks();
+    syncTracks();
   }, []);
+
+  // ✅ PHASE 2: VISUAL PLAYHEAD SYNC
+  // TransportController manages state, but we need to update the DOM element position
+  // relative to the virtual viewport (scroll/zoom)
+  const updatePlayhead = useCallback(() => {
+    if (!playheadRef.current) return;
+
+    // Only show playhead in song mode
+    if (playbackMode !== 'song') {
+      playheadRef.current.style.display = 'none';
+      return;
+    }
+
+    const controller = AudioContextService.getTransportController();
+
+    // ✅ VISUAL INTERPOLATION (THE HACK)
+    // Get precise float position from the new interpolation method
+    // If not available, fallback to discrete steps
+    let currentBeat;
+
+    if (controller.getVisualPosition) {
+      // Ticks to Beats (24 ticks = 1 beat at 96 PPQ, but wait... Native uses 48 PPQ usually)
+      // NativeTransportSystem.ticksPerStep = 12 (at 48 PPQ) -> 4 steps per beat -> 48 ticks per beat
+      // Let's rely on controller to give us ticks, and we divide by ticksPerBeat
+
+      const rawTicks = controller.getVisualPosition();
+
+      // FIXME: Hardcoded 48 PPQ assumed from NativeTransportSystem init
+      // Ideally read from transport.ppq, but accessing deep props is risky in RAF.
+      // Standardizing on: 48 PPQ = 48 ticks per beat.
+      currentBeat = rawTicks / 48;
+    } else {
+      // Fallback
+      const currentStepCheck = controller.getCurrentStep();
+      currentBeat = currentStepCheck / 4;
+    }
+
+    // Calculate screen position
+    const pixelsPerBeat = constants.PIXELS_PER_BEAT * viewport.zoomX;
+    const x = (currentBeat * pixelsPerBeat) - viewport.scrollX;
+
+    // Update position and visibility
+    if (x >= 0 && x <= viewport.width) {
+      playheadRef.current.style.transform = `translateX(${x}px)`;
+      playheadRef.current.style.display = 'block';
+    } else {
+      playheadRef.current.style.display = 'none';
+    }
+  }, [viewport.zoomX, viewport.scrollX, viewport.width, playbackMode, constants.PIXELS_PER_BEAT]);
+
+  // Subscribe to transport events for smooth 60fps updates
+  useEffect(() => {
+    // Update loop
+    let rafId;
+    let isRunning = true;
+
+    const loop = () => {
+      if (!isRunning) return;
+
+      // Always update playhead if not stopped (Playing OR Paused)
+      // We rely on isPlaying from store which toggles false on pause,
+      // so we need a broader condition or just rely on the fact that if we are mounted/active we should update.
+      // Actually, standard is to stop RAF on pause to save battery, but for "scrubbing" feel we often keep it.
+      // However, if we just rely on events for pause, we might miss the interpolation.
+      // Let's keep loop running if isPlaying is true, but ALSO run it once if we get a position update.
+      // AND crucially: if we Pause, we want the playhead to STAY visible.
+
+      // FIX: Run loop if playing. If paused, we rely on event triggers or a slower poll?
+      // Standard: Run loop if playing.
+      if (isPlaying) {
+        updatePlayhead();
+        rafId = requestAnimationFrame(loop);
+      }
+    };
+
+    if (isPlaying) {
+      loop();
+    } else {
+      // If not playing (Paused or Stopped), update once to set initial/current position
+      updatePlayhead();
+    }
+
+    // Subscribe to position jumps (seek/ticks)
+    const handlePositionChange = () => {
+      // If we are paused, this event pushes the new position (from scrub or pause snap)
+      if (!isPlaying) {
+        requestAnimationFrame(updatePlayhead);
+      }
+    };
+
+    // We use EventBus from controller for 'transport:positionChanged'
+    EventBus.on('transport:positionChanged', handlePositionChange);
+
+    return () => {
+      isRunning = false;
+      if (rafId) cancelAnimationFrame(rafId);
+      EventBus.off('transport:positionChanged', handlePositionChange);
+    };
+  }, [isPlaying, updatePlayhead]);
+
+  // Update on scroll/zoom
+  useEffect(() => {
+    updatePlayhead();
+  }, [updatePlayhead]);
 
   // ✅ REMOVED: Empty useEffect that was causing excessive re-render logs
   // TimelineController is disabled for ArrangementV2 (uses own clip interaction system)
@@ -2645,6 +2753,36 @@ export function ArrangementPanelV2() {
           <canvas ref={gridCanvasRef} className="arr-v2-canvas arr-v2-canvas-grid" />
           <canvas ref={clipsCanvasRef} className="arr-v2-canvas arr-v2-canvas-clips" />
           <canvas ref={handlesCanvasRef} className="arr-v2-canvas arr-v2-canvas-handles" />
+
+          {/* ✅ VISUAL PLAYHEAD */}
+          <div
+            ref={playheadRef}
+            className="arr-v2-playhead"
+            style={{
+              position: 'absolute',
+              top: 0,
+              bottom: 0,
+              width: '1px',
+              backgroundColor: '#ef4444', // Red color
+              zIndex: 100, // Above everything
+              pointerEvents: 'none',
+              transform: 'translateX(0px)',
+              display: 'none',
+              boxShadow: '0 0 4px rgba(239, 68, 68, 0.5)'
+            }}
+          >
+            {/* Playhead Cap (Triangle) */}
+            <div style={{
+              position: 'absolute',
+              top: 0,
+              left: '-5px',
+              width: 0,
+              height: 0,
+              borderLeft: '5px solid transparent',
+              borderRight: '5px solid transparent',
+              borderTop: '5px solid #ef4444'
+            }} />
+          </div>
         </div>
       </div>
 

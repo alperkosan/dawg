@@ -16,7 +16,12 @@ export const AUDIO_QUALITY_PRESETS = {
       mixerChannels: 8,
       performanceUpdateInterval: 2000,
       enablePerformanceMonitoring: false,
-      audioWorkletFallback: true
+      audioWorkletFallback: true,
+      // ✅ Industry-standard timing settings
+      ppq: 96,                    // Pulses Per Quarter Note (FL Studio default)
+      lookaheadTime: 0.2,         // 200ms lookahead for stability
+      scheduleAheadTime: 0.3,     // 300ms schedule ahead for maximum stability
+      syncInterval: 100           // 100ms sync interval (~10fps)
     },
     requirements: {
       minCPUCores: 1,
@@ -39,7 +44,12 @@ export const AUDIO_QUALITY_PRESETS = {
       mixerChannels: 16,
       performanceUpdateInterval: 1000,
       enablePerformanceMonitoring: true,
-      audioWorkletFallback: true
+      audioWorkletFallback: true,
+      // ✅ Industry-standard timing settings
+      ppq: 480,                   // Pulses Per Quarter Note (Max For Live standard)
+      lookaheadTime: 0.12,        // 120ms lookahead (balanced)
+      scheduleAheadTime: 0.15,    // 150ms schedule ahead
+      syncInterval: 50            // 50ms sync interval (~20fps)
     },
     requirements: {
       minCPUCores: 2,
@@ -62,7 +72,12 @@ export const AUDIO_QUALITY_PRESETS = {
       mixerChannels: 32,
       performanceUpdateInterval: 500,
       enablePerformanceMonitoring: true,
-      audioWorkletFallback: false
+      audioWorkletFallback: false,
+      // ✅ Industry-standard timing settings
+      ppq: 480,                   // Pulses Per Quarter Note (professional standard)
+      lookaheadTime: 0.1,         // 100ms lookahead (low latency)
+      scheduleAheadTime: 0.12,    // 120ms schedule ahead
+      syncInterval: 33            // 33ms sync interval (~30fps)
     },
     requirements: {
       minCPUCores: 4,
@@ -85,7 +100,12 @@ export const AUDIO_QUALITY_PRESETS = {
       mixerChannels: 64,
       performanceUpdateInterval: 250,
       enablePerformanceMonitoring: true,
-      audioWorkletFallback: false
+      audioWorkletFallback: false,
+      // ✅ Industry-standard timing settings
+      ppq: 960,                   // Pulses Per Quarter Note (Ableton/Logic Pro standard)
+      lookaheadTime: 0.05,        // 50ms lookahead (ultra low latency)
+      scheduleAheadTime: 0.08,    // 80ms schedule ahead
+      syncInterval: 16            // 16ms sync interval (~60fps)
     },
     requirements: {
       minCPUCores: 8,
@@ -136,6 +156,24 @@ export const PERFORMANCE_IMPACT = {
     48: { cpu: 1.5, memory: 1.4 },
     64: { cpu: 2.0, memory: 1.8 },
     128: { cpu: 4.0, memory: 3.5 }
+  },
+
+  // ✅ NEW: PPQ (Pulses Per Quarter Note) performance impact
+  ppq: {
+    96: { cpu: 0.8, precision: 0.6, compatibility: 1.0 },    // FL Studio default
+    192: { cpu: 0.9, precision: 0.8, compatibility: 0.95 },
+    480: { cpu: 1.0, precision: 0.9, compatibility: 0.9 },   // M4L/Standard
+    960: { cpu: 1.2, precision: 1.0, compatibility: 0.85 }   // Ableton/Logic Pro
+  },
+
+  // ✅ NEW: Lookahead time performance impact
+  lookaheadTime: {
+    0.05: { latency: 0.5, stability: 0.7, cpu: 1.2 },   // 50ms - ultra low latency
+    0.08: { latency: 0.7, stability: 0.85, cpu: 1.1 },  // 80ms - low latency
+    0.1: { latency: 0.8, stability: 0.9, cpu: 1.0 },    // 100ms - balanced
+    0.12: { latency: 0.9, stability: 0.95, cpu: 0.95 }, // 120ms - stable
+    0.15: { latency: 1.0, stability: 1.0, cpu: 0.9 },   // 150ms - very stable
+    0.2: { latency: 1.2, stability: 1.0, cpu: 0.8 }     // 200ms - maximum stability
   }
 };
 
@@ -370,7 +408,7 @@ export class MachineCapabilityDetector {
       memory: Math.min(100, capabilities.memory.deviceMemory * 12.5),
       browserScore: capabilities.browserScore,
       audioSystem: capabilities.audioSystem.audioWorkletSupported ? 80 :
-                  capabilities.audioSystem.webAudioSupported ? 60 : 30
+        capabilities.audioSystem.webAudioSupported ? 60 : 30
     };
 
     return Object.entries(weights).reduce((total, [key, weight]) => {
@@ -527,8 +565,8 @@ export class AudioQualityManager {
         const req = preset.requirements;
 
         return caps.cpu.cores >= req.minCPUCores &&
-               caps.memory.deviceMemory >= req.minRAM &&
-               caps.browserScore >= req.browserMinScore;
+          caps.memory.deviceMemory >= req.minRAM &&
+          caps.browserScore >= req.browserMinScore;
       })
       .map(([name, _]) => name);
   }

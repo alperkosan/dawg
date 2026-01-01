@@ -65,6 +65,8 @@ export class NoteScheduler {
      * @returns {Object} Scheduling statistics
      */
     scheduleInstrumentNotes(instrument, notes, instrumentId, baseTime, clipId = null, options = {}) {
+        console.log(`🔍 NoteScheduler.scheduleInstrumentNotes called: ${instrumentId}, notes=${notes?.length || 0}, baseTime=${baseTime?.toFixed(3)}, options=${JSON.stringify(options)}`);
+
         if (!instrument || !notes || notes.length === 0) {
             return { notesScheduled: 0, eventsScheduled: 0 };
         }
@@ -405,6 +407,7 @@ export class NoteScheduler {
                 absoluteTime,
                 (scheduledTime) => {
                     try {
+                        console.log(`🎵 NoteScheduler: TRIGGERING note for ${instrumentId}, pitch=${note.pitch || 'C4'}, vel=${note.velocity || 1}, time=${scheduledTime.toFixed(3)}, dur=${noteDuration?.toFixed(3)}`);
                         instrument.triggerNote(
                             note.pitch || 'C4',
                             note.velocity || 1,

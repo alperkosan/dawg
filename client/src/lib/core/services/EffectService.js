@@ -58,7 +58,7 @@ export class EffectService {
 
         try {
             // Create effect using factory
-            const effect = EffectFactory.create(effectType, this.audioContext, settings);
+            const effect = EffectFactory.createEffect(this.audioContext, effectType, settings);
 
             if (!effect) {
                 logger.error(NAMESPACES.AUDIO, `Failed to create effect: ${effectType}`);
@@ -66,7 +66,10 @@ export class EffectService {
             }
 
             // Add to mixer insert chain
-            const audioEffectId = insert.addEffect(effect, effectType, settings);
+            // ✅ FIX: Use effect.id instead of waiting for return value (MixerInsert.addEffect is void)
+            // Signature: addEffect(effectId, effectNode, settings, bypass, type)
+            const audioEffectId = effect.id;
+            insert.addEffect(audioEffectId, effect, settings, false, effectType);
 
             if (audioEffectId) {
                 // Store mapping

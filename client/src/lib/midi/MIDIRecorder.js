@@ -20,7 +20,7 @@ import { AudioContextService } from '../services/AudioContextService';
 import { InstrumentService } from '../services/InstrumentService';
 import { AudioEngineGlobal } from '@/lib/core/AudioEngineGlobal';
 import { STEPS_PER_BEAT } from '@/lib/audio/audioRenderConfig.js';
-import { getTimelineController } from '@/lib/core/TimelineControllerSingleton';
+
 import { useArrangementStore } from '@/store/useArrangementStore';
 
 // ═══════════════════════════════════════════════════════════
@@ -471,10 +471,10 @@ export class MIDIRecorder {
         // Stop playback when recording stops
         if (this.playbackStore.isPlaying) {
             try {
-                const timelineController = getTimelineController();
-                await timelineController.stop();
+                const transportController = AudioContextService.getTransportController();
+                transportController.stop();
             } catch (error) {
-                MIDILog.warn('TimelineController not available, using fallback');
+                MIDILog.warn('TransportController not available, using fallback');
                 await this.playbackStore.handleStop();
             }
         }

@@ -7,7 +7,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import TransportManagerSingleton from '@/lib/core/TransportManagerSingleton.js';
+import { AudioContextService } from '@/lib/services/AudioContextService';
 
 /**
  * ✅ MAIN TRANSPORT HOOK
@@ -41,7 +41,8 @@ export const useTransportManager = (options = {}) => {
 
     const initTransport = async () => {
       try {
-        const transportManager = await TransportManagerSingleton.getInstance();
+        // Use the new TransportController via AudioContextService
+        const transportManager = AudioContextService.getTransportController();
         if (!transportManager || !isMounted) return;
 
         transportManagerRef.current = transportManager;

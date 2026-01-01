@@ -114,6 +114,10 @@ impl Transport {
                          // Wrap carefully
                          let overshoot = self.current_sample - loop_end_sample;
                          self.current_sample = loop_start_sample + (overshoot % loop_len);
+                         worker_log(&format!(
+                             "🔁 Loop wrap: {} -> {} (start={}, end={}, overshoot={})",
+                             loop_end_sample, self.current_sample, loop_start_sample, loop_end_sample, overshoot
+                         ));
                      }
                 }
             }
@@ -870,10 +874,24 @@ impl UnifiedMixerProcessor {
                 *seek_trigger_ptr = 0;
             }
             
+            
             // --- READ FROM JS (Loop Params) ---
             let loop_enabled = *float_view.add(SharedAudioState::idx_loop_enabled()) > 0.5;
             let loop_start = *float_view.add(SharedAudioState::idx_loop_start());
             let loop_end = *float_view.add(SharedAudioState::idx_loop_end());
+            
+            // 🔍 DEBUG: Log loop changes
+            static mut LAST_LOOP_STATE: (bool, f32, f32) = (false, 0.0, 0.0);
+            if loop_enabled != LAST_LOOP_STATE.0 || 
+               loop_start != LAST_LOOP_STATE.1 || 
+               loop_end != LAST_LOOP_STATE.2 {
+                worker_log(&format!(
+                    "🔄 WASM Loop Update: enabled={}, start={:.2}, end={:.2}",
+                    loop_enabled, loop_start, loop_end
+                ));
+                LAST_LOOP_STATE = (loop_enabled, loop_start, loop_end);
+            }
+            
             self.transport.set_loop(loop_enabled, loop_start, loop_end);
 
             // --- WRITE TO JS (Position) ---

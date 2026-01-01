@@ -4,10 +4,14 @@ import EventBus from './EventBus'; // YENİ: EventBus'ı import ediyoruz.
 import { SampleAccurateTime } from './utils/SampleAccurateTime.js'; // ✅ NEW: Sample-accurate timing
 import { LookaheadScheduler } from './utils/LookaheadScheduler.js'; // ✅ NEW: Advanced lookahead scheduling
 import { EventBatcher } from './utils/EventBatcher.js'; // ✅ NEW: Event batching for performance
+import { LoopState } from './LoopState.js'; // ✅ NEW: Unified loop state management
 
 export class NativeTransportSystem {
     constructor(audioContext) {
         this.audioContext = audioContext;
+
+        // ✅ CRITICAL: Initialize SharedArrayBuffer FIRST (before any state that writes to SAB)
+        this._initSharedMemory();
 
         // State management
         this.isPlaying = false;
@@ -41,10 +45,22 @@ export class NativeTransportSystem {
         // Yüksek BPM (140+): 100ms, Orta BPM (100-140): 120ms, Düşük BPM (<100): 150ms
         this.scheduleAheadTime = this._calculateAdaptiveScheduleAhead();
 
-        // ✅ CRITICAL: Loop system - ALL IN TICKS
-        this.loop = true;
-        this.loopStartTick = 0;
-        this.loopEndTick = 64 * this.ticksPerStep; // 64 steps = 1536 ticks
+        // ✅ NEW: Unified Loop State Management
+        // Initialize AFTER _initSharedMemory() so SAB is available
+        this.loopState = new LoopState(this);
+        this.loopState.setPoints(0, 64, true); // Default: 0-64 steps, enabled
+        this.loopState.initializeSAB(); // Write to SAB
+
+        // ⚡ LEGACY: Loop cache (kept for backward compatibility, not used by LoopState)
+        this.loopCache = {
+            lastBpm: null,
+            lastLoopStart: null,
+            lastLoopEnd: null,
+            lastTimeSignature: null,
+            cachedLoopSeconds: null,
+            cachedLoopTicks: null,
+            cacheValid: false
+        };
 
         // Bar tracking
         this.currentBar = 0;
@@ -62,23 +78,6 @@ export class NativeTransportSystem {
 
         // UI update throttling
         this.lastUIUpdate = 0;
-
-        // ⚡ OPTIMIZATION: Loop calculation caching
-        this.loopCache = {
-            lastBpm: null,
-            lastLoopStart: null,
-            lastLoopEnd: null,
-            lastTimeSignature: null,
-            cachedLoopSeconds: null,
-            cachedLoopTicks: null,
-            cacheValid: false
-        };
-
-        // ✅ Initialize worker timer (LEGACY - replaced by SAB Sync)
-        // this.initializeWorkerTimer();
-
-        // ✅ NEW: Shared Memory initialization
-        this._initSharedMemory();
 
         this._setupEventListeners();
     }
@@ -109,6 +108,23 @@ export class NativeTransportSystem {
         } catch (e) {
             console.error("❌ SharedArrayBuffer support missing! Fallback needed.", e);
         }
+    }
+
+    // =================== LOOP STATE GETTERS (Delegate to LoopState) ===================
+
+    /** @returns {boolean} Loop enabled flag */
+    get loop() {
+        return this.loopState?.enabled ?? true;
+    }
+
+    /** @returns {number} Loop start position in ticks */
+    get loopStartTick() {
+        return this.loopState?.startTick ?? 0;
+    }
+
+    /** @returns {number} Loop end position in ticks */
+    get loopEndTick() {
+        return this.loopState?.endTick ?? 1536;
     }
 
     // Called by AudioContextService or AudioEngine
@@ -254,43 +270,95 @@ export class NativeTransportSystem {
     _startSyncLoop() {
         if (this.syncAnimationFrame) cancelAnimationFrame(this.syncAnimationFrame);
 
+        // ✅ FIX: JS-side tick calculation (WASM doesn't update SAB position)
+        // WASM was supposed to update sharedFloat[SAB_IDX_POS_TICKS] but doesn't
+        // So we calculate tick position based on AudioContext.currentTime
+        this._lastWasmTick = 0;
+        this._loopEventFired = false;
+        this._loopEventCooldown = 0;
+
+        // ✅ NEW: Track playback start time for accurate tick calculation
+        this._playbackStartTime = this.audioContext.currentTime;
+        this._playbackStartTick = this.currentTick;
+
         const loop = () => {
             if (!this.isPlaying) return;
 
-            // 1. Read Position from Wasm
-            // Float doesn't support Atomics.load. Direct read is atomic enough for aligned float32. 
-            // SharedFloat is TypedArray, standard read is atomic enough for single writer.
-            // Or use DataView for consistent endianness? 
-            // For now, volatile read:
-            const currentWasmTick = this.sharedFloat[this.SAB_IDX_POS_TICKS];
+            const now = performance.now();
+            const audioTime = this.audioContext.currentTime;
 
-            // 2. Sync JS State (Visuals)
-            // Only update if changed significantly? 
-            // Actually, we use this to drive the scheduler
-            if (currentWasmTick > this.currentTick) {
-                // Determine delta
-                this.currentTick = currentWasmTick;
-                this.currentBar = Math.floor(this.currentTick / this.ticksPerBar);
+            // ✅ FIX: Calculate current tick from elapsed time (JS-side, not WASM)
+            // This replaces the broken WASM position reading
+            const elapsedSeconds = audioTime - this._playbackStartTime;
+            const ticksPerSecond = this.bpm / 60 * this.ppq; // ticks per second
+            const calculatedTick = this._playbackStartTick + (elapsedSeconds * ticksPerSecond);
 
-                // Trigger Visual Updates (Throttled)
-                const now = performance.now();
-                if (now - this.lastUIUpdate > 16.67) {
-                    this.triggerCallback('tick', {
-                        time: this.audioContext.currentTime,
-                        position: this.currentTick,
-                        formatted: this.formatPosition(this.currentTick),
-                        bar: this.currentBar,
-                        step: this.ticksToSteps(this.currentTick)
+            // ✅ Write calculated position to SAB for other systems to read
+            if (this.sharedFloat) {
+                this.sharedFloat[this.SAB_IDX_POS_TICKS] = calculatedTick;
+            }
+
+            // Use the calculated tick as current position
+            let currentWasmTick = calculatedTick;
+
+            // 2. ✅ Loop Boundary Detection
+            if (this.loop && this.loopEndTick > 0 && currentWasmTick >= this.loopEndTick) {
+                // Only fire if cooldown has passed (prevent multiple triggers)
+                if (now - this._loopEventCooldown > 100) {
+                    this._loopEventCooldown = now;
+
+                    // Calculate new position
+                    const newTick = this.loopStartTick || 0;
+
+                    // ✅ Reset playback reference for accurate timing after loop
+                    this._playbackStartTime = audioTime;
+                    this._playbackStartTick = newTick;
+
+                    // Write new position to SAB
+                    if (this.sharedFloat) {
+                        this.sharedFloat[this.SAB_IDX_POS_TICKS] = newTick;
+                    }
+
+                    // Update JS state
+                    this.currentTick = newTick;
+                    this._lastWasmTick = newTick;
+
+                    // Fire loop event
+                    const loopStartTime = audioTime;
+                    this.triggerCallback('loop', {
+                        time: loopStartTime,
+                        nextLoopStartTime: loopStartTime,
+                        fromTick: currentWasmTick,
+                        toTick: newTick,
+                        needsReschedule: true
                     });
-                    this.lastUIUpdate = now;
+
+                    // Continue to next frame
+                    this.syncAnimationFrame = requestAnimationFrame(loop);
+                    return;
                 }
             }
 
-            // 3. Scheduler Call (Still needed for JS-side events)
-            // But scheduler() iterates using nextTickTime. 
-            // We should trust Wasm time.
-            // For now, let's keep scheduler running to process queued events based on TIME.
-            this.scheduler();
+            // 3. Sync JS state with calculated position
+            this.currentTick = currentWasmTick;
+            this.currentBar = Math.floor(this.currentTick / this.ticksPerBar);
+            this._lastWasmTick = currentWasmTick;
+
+            // 4. Throttled Visual Updates (60fps)
+            if (now - this.lastUIUpdate > 16.67) {
+                const step = this.ticksToSteps(currentWasmTick);
+                this.triggerCallback('tick', {
+                    time: audioTime,
+                    position: this.currentTick,
+                    formatted: this.formatPosition(this.currentTick),
+                    bar: this.currentBar,
+                    step: step
+                });
+                this.lastUIUpdate = now;
+            }
+
+            // 5. Process scheduled events
+            this.processScheduledEvents(audioTime);
 
             this.syncAnimationFrame = requestAnimationFrame(loop);
         };
@@ -299,6 +367,9 @@ export class NativeTransportSystem {
 
     _stopSyncLoop() {
         if (this.syncAnimationFrame) cancelAnimationFrame(this.syncAnimationFrame);
+        this._lastWasmTick = 0;
+        this._loopEventFired = false;
+        this._loopEventCooldown = 0;
     }
 
 
@@ -321,10 +392,17 @@ export class NativeTransportSystem {
             return this.ticksToSteps(this.currentTick);
         }
 
-        // Sub-step precision during playback
-        const elapsed = this.audioContext.currentTime - this.nextTickTime + this.getSecondsPerTick();
-        const ticksElapsed = Math.floor(elapsed / this.getSecondsPerTick());
-        return this.ticksToSteps(this.currentTick + ticksElapsed);
+        // ✅ FIX: Use consistent time anchor mechanism for precise position
+        // This matches the logic in _startSyncLoop to ensure consistency
+        if (this._playbackStartTime !== undefined) {
+            const elapsedSeconds = this.audioContext.currentTime - this._playbackStartTime;
+            const ticksPerSecond = this.bpm / 60 * this.ppq;
+            const calculatedTick = this._playbackStartTick + (elapsedSeconds * ticksPerSecond);
+            return this.ticksToSteps(calculatedTick);
+        }
+
+        // Fallback if _playbackStartTime not set (should not happen if playing)
+        return this.ticksToSteps(this.currentTick);
     }
 
     setPosition(step) {
@@ -334,6 +412,11 @@ export class NativeTransportSystem {
 
         if (this.isPlaying) {
             this.nextTickTime = this.audioContext.currentTime;
+
+            // ✅ FIX: Update playback anchor for JS-side tick calculation
+            // If we don't update this, the _startSyncLoop will revert position based on old anchor
+            this._playbackStartTime = this.audioContext.currentTime;
+            this._playbackStartTick = targetTick;
         }
 
         // ✅ COMMAND: SEEK (Sync Wasm Clock)
@@ -349,64 +432,23 @@ export class NativeTransportSystem {
 
 
     setLoopPoints(startStep, endStep) {
+        // ✅ NEW: Delegate to unified LoopState (validation happens there)
+        this.loopState.setPoints(startStep, endStep, true);
 
-        // ⚡ OPTIMIZATION: Check cache validity first
-        if (this._isLoopCacheValid(startStep, endStep)) {
-            return;
-        }
-
-        // ✅ CRITICAL FIX: Validate endStep to prevent infinite loop restart
-        // If endStep is 0 or negative, set a minimum of 64 steps (4 bars)
-        if (!endStep || endStep <= 0) {
-            console.warn(`⚠️ Invalid loopEnd (${endStep}), using default 64 steps`);
-            endStep = 64;
-        }
-
-        // Ensure startStep is not greater than endStep
-        if (startStep >= endStep) {
-            console.warn(`⚠️ Invalid loop points: start (${startStep}) >= end (${endStep}), using defaults`);
-            startStep = 0;
-            endStep = 64;
-        }
-
-        // Convert steps to ticks (1 step = 24 ticks at PPQ=96)
-        this.loopStartTick = startStep * this.ticksPerStep;
-        // ✅ CRITICAL FIX: loopEnd is exclusive, so loopEndTick should be the first tick AFTER the last step
-        // But we want the last step to complete, so we add one more tick to allow the last step's final tick
-        // Example: if loopEnd = 16 steps, we want steps 0-15 to play fully
-        // Step 15 is ticks 360-383, so loopEndTick should be 384 (start of step 16)
-        // But we need to allow step 15 to complete, so we check when currentTick > loopEndTick
-        // Actually, the issue is that we're checking >=, which triggers at the start of the next step
-        // We should check > to allow the last step to complete
-        this.loopEndTick = endStep * this.ticksPerStep;
-
-        // ✅ FIX: Also set the tick-based properties for the duplicate loop logic
-        this.loopStart = this.loopStartTick;
-        this.loopEnd = this.loopEndTick;
-
-
-        // ⚡ OPTIMIZATION: Update cache
-        this._updateLoopCache(startStep, endStep);
-
-        //Sync with SAB
-        if (this.sharedFloat) {
-            this.sharedFloat[this.SAB_IDX_LOOP_START] = this.loopStartTick;
-            this.sharedFloat[this.SAB_IDX_LOOP_END] = this.loopEndTick;
-        }
-
-
-        // Reset position if outside loop (only if loopEndTick is valid)
-        if (this.loopEndTick > 0 && this.currentTick >= this.loopEndTick) {
+        // ✅ Reset position if outside new loop range
+        const currentTick = this.currentTick;
+        if (currentTick < this.loopStartTick || currentTick >= this.loopEndTick) {
             this.currentTick = this.loopStartTick;
             this.nextTickTime = this.audioContext.currentTime;
         }
     }
 
     setLoopEnabled(enabled) {
-        this.loop = enabled;
-        if (this.sharedFloat) {
-            this.sharedFloat[this.SAB_IDX_LOOP_ENABLED] = enabled ? 1.0 : 0.0;
-        }
+        // ✅ FIX: Prevent undefined from being set (use current value if undefined)
+        const validEnabled = enabled !== undefined ? enabled : this.loopState.enabled;
+
+        // ✅ NEW: Delegate to unified LoopState
+        this.loopState.setEnabled(validEnabled);
     }
 
     setBPM(bpm) {
@@ -523,45 +565,25 @@ export class NativeTransportSystem {
         }
     }
 
+    /**
+     * @deprecated This method is no longer used in WASM Master Clock mode.
+     * Loop detection is now handled in _startSyncLoop.
+     * Kept for backward compatibility only.
+     */
     advanceToNextTick() {
         const secondsPerTick = this.getSecondsPerTick();
-        const currentTime = this.audioContext.currentTime;
-        const oldTick = this.currentTick;
-        const oldNextTickTime = this.nextTickTime;
 
-        // ✅ First: Always increment currentTick
+        // ✅ DEPRECATED: This method is no longer called in WASM Master Clock mode
+        // _startSyncLoop now handles all timing from WASM position
+        // This only exists for backward compatibility if scheduler() is called externally
+
         this.currentTick++;
 
-        // ✅ Then: Check if we've reached or passed the loop boundary
-        // loopEndTick is exclusive (e.g., for 16 steps, loopEndTick = 384)
-        // When currentTick reaches 384, we should restart to 0
-        // ✅ CRITICAL FIX: Also check that loopEndTick is valid (> 0) to prevent infinite loop events
-        if (this.loop && this.loopEndTick > 0 && this.currentTick >= this.loopEndTick) {
-            const previousTick = this.currentTick;
-
-            // ✅ Reset to loopStartTick (not always 0) on loop restart
-            this.currentTick = this.loopStartTick || 0;
-
-            // ✅ CRITICAL: nextTickTime is NOT updated - already correct from previous tick
-            // This ensures perfect loop length consistency
-            const step0StartTime = this.nextTickTime;
-
-            // Clear scheduled events (preserving noteOff events to prevent hanging notes)
-            this.clearScheduledEvents((event) => event.data?.type !== 'noteOff');
-            this.triggerCallback('loop', {
-                time: step0StartTime,
-                nextLoopStartTime: step0StartTime,
-                fromTick: previousTick - 1,
-                toTick: 0,
-                needsReschedule: true
-            });
-        } else {
-            // ✅ Normal tick: calculate next tick time (sample-accurate)
-            this.nextTickTime = SampleAccurateTime.toSampleAccurate(
-                this.audioContext,
-                this.nextTickTime + secondsPerTick
-            );
-        }
+        // Just update nextTickTime for timing calculations
+        this.nextTickTime = SampleAccurateTime.toSampleAccurate(
+            this.audioContext,
+            this.nextTickTime + secondsPerTick
+        );
 
         // Bar tracking (existing code)
         const newBar = Math.floor(this.currentTick / this.ticksPerBar);
@@ -929,6 +951,26 @@ export class NativeTransportSystem {
         return secondsPerBeat / this.ppq;
     }
 
+    /**
+     * ✅ NEW: Get steps per second (authoritative timing source)
+     * This is the single source of truth for playhead speed calculations
+     * Used by TransportController for visual interpolation
+     * @returns {number} Steps per second at current BPM
+     */
+    getStepsPerSecond() {
+        // 1 beat = 4 steps (16th notes in 4/4 time)
+        // steps/second = (beats/minute / 60) * 4
+        return (this.bpm / 60) * 4;
+    }
+
+    /**
+     * ✅ NEW: Get seconds per step (inverse of stepsPerSecond)
+     * @returns {number} Seconds per step
+     */
+    getSecondsPerStep() {
+        return 1 / this.getStepsPerSecond();
+    }
+
     // =================== EVENT SYSTEM ===================
 
     on(event, callback) {
@@ -948,12 +990,22 @@ export class NativeTransportSystem {
 
     triggerCallback(event, data = {}) {
         if (this.callbacks.has(event)) {
-            this.callbacks.get(event).forEach(callback => {
+            const callbacks = this.callbacks.get(event);
+            // ✅ DEBUG: Log loop event callback count
+            if (event === 'loop') {
+                console.log(`🔄 [TRANSPORT] Triggering 'loop' event to ${callbacks.size} callbacks`);
+            }
+            callbacks.forEach(callback => {
                 try {
                     callback(data);
                 } catch (error) {
+                    // ✅ FIX: Don't silently swallow errors - log them
+                    console.error(`❌ [TRANSPORT] Error in '${event}' callback:`, error);
                 }
             });
+        } else if (event === 'loop') {
+            // ✅ DEBUG: No callbacks registered for loop event
+            console.warn(`⚠️ [TRANSPORT] No callbacks registered for 'loop' event!`);
         }
     }
 
