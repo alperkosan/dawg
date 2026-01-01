@@ -405,16 +405,10 @@ export function ArrangementPanelV2() {
     let currentBeat;
 
     if (controller.getVisualPosition) {
-      // Ticks to Beats (24 ticks = 1 beat at 96 PPQ, but wait... Native uses 48 PPQ usually)
-      // NativeTransportSystem.ticksPerStep = 12 (at 48 PPQ) -> 4 steps per beat -> 48 ticks per beat
-      // Let's rely on controller to give us ticks, and we divide by ticksPerBeat
-
-      const rawTicks = controller.getVisualPosition();
-
-      // FIXME: Hardcoded 48 PPQ assumed from NativeTransportSystem init
-      // Ideally read from transport.ppq, but accessing deep props is risky in RAF.
-      // Standardizing on: 48 PPQ = 48 ticks per beat.
-      currentBeat = rawTicks / 48;
+      // ✅ FIX: getVisualPosition now returns STEPS (interpolated), not ticks
+      // Steps are 16th notes (4 steps per beat)
+      const visualStep = controller.getVisualPosition();
+      currentBeat = visualStep / 4;
     } else {
       // Fallback
       const currentStepCheck = controller.getCurrentStep();
@@ -426,11 +420,14 @@ export function ArrangementPanelV2() {
     const x = (currentBeat * pixelsPerBeat) - viewport.scrollX;
 
     // Update position and visibility
-    if (x >= 0 && x <= viewport.width) {
-      playheadRef.current.style.transform = `translateX(${x}px)`;
-      playheadRef.current.style.display = 'block';
-    } else {
-      playheadRef.current.style.display = 'none';
+    // Update position and visibility
+    if (playheadRef.current) {
+      if (x >= 0 && x <= viewport.width) {
+        playheadRef.current.style.transform = `translateX(${x}px)`;
+        playheadRef.current.style.display = 'block';
+      } else {
+        playheadRef.current.style.display = 'none';
+      }
     }
   }, [viewport.zoomX, viewport.scrollX, viewport.width, playbackMode, constants.PIXELS_PER_BEAT]);
 
@@ -2755,34 +2752,12 @@ export function ArrangementPanelV2() {
           <canvas ref={handlesCanvasRef} className="arr-v2-canvas arr-v2-canvas-handles" />
 
           {/* ✅ VISUAL PLAYHEAD */}
-          <div
+          {/* ✅ VISUAL PLAYHEAD REMOVED - Using TimelineRuler's playhead instead */}
+          {/* <div
             ref={playheadRef}
             className="arr-v2-playhead"
-            style={{
-              position: 'absolute',
-              top: 0,
-              bottom: 0,
-              width: '1px',
-              backgroundColor: '#ef4444', // Red color
-              zIndex: 100, // Above everything
-              pointerEvents: 'none',
-              transform: 'translateX(0px)',
-              display: 'none',
-              boxShadow: '0 0 4px rgba(239, 68, 68, 0.5)'
-            }}
-          >
-            {/* Playhead Cap (Triangle) */}
-            <div style={{
-              position: 'absolute',
-              top: 0,
-              left: '-5px',
-              width: 0,
-              height: 0,
-              borderLeft: '5px solid transparent',
-              borderRight: '5px solid transparent',
-              borderTop: '5px solid #ef4444'
-            }} />
-          </div>
+            ...
+          /> */}
         </div>
       </div>
 

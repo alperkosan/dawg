@@ -405,6 +405,13 @@ export class NativeTransportSystem {
         return this.ticksToSteps(this.currentTick);
     }
 
+    /**
+     * Get visual position in steps (alias for getCurrentStep for compatibility)
+     */
+    getVisualPosition() {
+        return this.getCurrentStep();
+    }
+
     setPosition(step) {
         const targetTick = this.stepsToTicks(step);
         this.currentTick = targetTick;
