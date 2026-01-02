@@ -872,6 +872,13 @@ export class PlaybackService {
             return;
         }
 
+        // ✅ FIX: Debounce loop handling to prevent duplicate schedules
+        if (this._isHandlingLoop) {
+            logger.debug(NAMESPACES.AUDIO, '⚠️ Loop restart ignored (already handling)');
+            return;
+        }
+        this._isHandlingLoop = true;
+
         try {
             logger.debug(NAMESPACES.AUDIO, '🔁 Loop restart detected - rescheduling pattern');
 
@@ -880,8 +887,10 @@ export class PlaybackService {
 
             // Calculate time for new loop iteration
             const maxLatency = this.engine.latencyCompensator?.getMaxLatencySeconds() || 0;
-            const safetyBuffer = 0.050; // ✅ CRITICAL FIX: Increased to 50ms to prevent scheduling in the past
-            const startDelay = Math.max(0.050, maxLatency + safetyBuffer); // Minimum 50ms to account for scheduling overhead
+            // ✅ CRITICAL FIX: Reduced buffer from 50ms to 10ms to minimize stutter/gap at loop boundary
+            // The previous 50ms buffer caused the first ~50ms of notes in the loop to be skipped/delayed
+            const safetyBuffer = 0.010;
+            const startDelay = Math.max(0.010, maxLatency + safetyBuffer);
             const adjustedStartTime = this.audioContext.currentTime + startDelay;
 
             // Get pattern data
@@ -929,6 +938,11 @@ export class PlaybackService {
             }
         } catch (error) {
             logger.error(NAMESPACES.AUDIO, 'Failed to reschedule on loop restart:', error);
+        } finally {
+            // Allow next loop event after a short delay
+            setTimeout(() => {
+                this._isHandlingLoop = false;
+            }, 50);
         }
     }
 

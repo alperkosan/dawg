@@ -130,7 +130,7 @@ export class MixerService {
         if (!insert) return false;
 
         try {
-            insert.disconnect();
+            // insert.disconnect() doesn't exist on MixerInsert wrapper
             if (typeof insert.dispose === 'function') {
                 insert.dispose();
             }

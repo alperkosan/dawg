@@ -26,11 +26,12 @@
  * Individual rendering task in the queue
  */
 class RendererTask {
-  constructor(id, callback, priority = 0, throttle = 0) {
+  constructor(id, callback, priority = 0, throttle = 0, continuous = false) {
     this.id = id;
     this.callback = callback;
     this.priority = priority;     // Higher = renders first
     this.throttle = throttle;     // Min ms between renders (0 = every frame)
+    this.continuous = continuous; // ✅ NEW: Always render (for analyzers/meters)
     this.lastRun = 0;
     this.enabled = true;
 
@@ -53,12 +54,12 @@ class RendererTask {
   shouldRender(now) {
     if (!this.enabled) return false;
 
-    // ✅ OPTIMIZATION: Skip if not dirty and throttled
+    // ✅ OPTIMIZATION: Check throttle first
     const throttleReady = (now - this.lastRun) >= this.throttle;
     if (!throttleReady) return false;
 
-    // Only render if dirty or throttle allows
-    return this.isDirty || throttleReady;
+    // Render if dirty OR continuous
+    return this.isDirty || this.continuous;
   }
 
   /**
@@ -234,20 +235,21 @@ class CanvasRenderManager {
    * @param {function} callback - Render function
    * @param {number} priority - Higher renders first (0-10)
    * @param {number} throttle - Min ms between renders (0 = every frame, 16 = 60fps, 50 = 20fps)
+   * @param {boolean} continuous - If true, renders every frame (respecting throttle) without needing markDirty
    */
-  register(id, callback, priority = 0, throttle = 0) {
+  register(id, callback, priority = 0, throttle = 0, continuous = false) {
     if (this.tasks.has(id)) {
       console.warn(`Renderer ${id} already registered, replacing...`);
     }
 
-    const task = new RendererTask(id, callback, priority, throttle);
+    const task = new RendererTask(id, callback, priority, throttle, continuous);
     this.tasks.set(id, task);
     this.tasksDirty = true; // Mark for resorting
 
     // Start RAF loop if not running
     this.start();
 
-    console.log(`🎨 Registered renderer: ${id} (priority: ${priority}, throttle: ${throttle}ms)`);
+    console.log(`🎨 Registered renderer: ${id} (p:${priority}, t:${throttle}, continuous:${continuous})`);
     return id;
   }
 
@@ -366,12 +368,12 @@ class CanvasRenderManager {
     }
 
     // ✅ OPTIMIZATION: Check if any task needs rendering
-    const hasDirtyTasks = this.sortedTasksCache.some(task =>
-      task.enabled && task.isDirty
+    const hasActiveTasks = this.sortedTasksCache.some(task =>
+      task.enabled && (task.isDirty || task.continuous)
     );
 
-    if (!hasDirtyTasks) {
-      console.log('🎨 Canvas Render Manager: No dirty tasks, pausing RAF');
+    if (!hasActiveTasks) {
+      console.log('🎨 Canvas Render Manager: No active tasks, pausing RAF');
       this.running = false;
       this.rafId = null;
       return; // Stop RAF loop when idle

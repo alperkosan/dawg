@@ -281,19 +281,40 @@ export class SchedulerService {
 
     /**
      * Cancel all scheduled events
+     * @param {boolean} forceReleaseActive - If true, immediately releases currently playing notes
      */
-    cancelAll() {
+    cancelAll(forceReleaseActive = true) {
         this.scheduledEvents.forEach(event => {
-            if (!event.executed) {
-                event.cancelled = true;
-                this.stats.eventsCancelled++;
+            if (event.executed) return;
+
+            // ✅ CRITICAL FIX: Prevent hanging notes
+            // If we cancel a NoteOff for a note that is currently playing (NoteOn executed),
+            // we must force release it immediately.
+            if (forceReleaseActive && event.type === ScheduledEventType.NOTE_OFF) {
+                // Find if the corresponding NoteOn was executed
+                // We can check if the note is active in scheduledNotes
+                const { instrumentId, noteId } = event.data;
+                const noteTracking = this.scheduledNotes.get(instrumentId)?.get(noteId);
+
+                if (noteTracking && noteTracking.noteOnId) {
+                    const noteOnEvent = this.scheduledEvents.get(noteTracking.noteOnId);
+                    if (noteOnEvent && noteOnEvent.executed) {
+                        // Note is active! executing off immediately
+                        // logger.debug(NAMESPACES.AUDIO, `🔌 Force releasing active note on cancelAll: ${noteId}`);
+                        this._executeEvent(event);
+                        return;
+                    }
+                }
             }
+
+            event.cancelled = true;
+            this.stats.eventsCancelled++;
         });
 
         this.scheduledEvents.clear();
         this.scheduledNotes.clear();
 
-        logger.debug(NAMESPACES.AUDIO, 'All scheduled events cancelled');
+        logger.debug(NAMESPACES.AUDIO, 'All scheduled events cancelled (active notes released)');
     }
 
     /**

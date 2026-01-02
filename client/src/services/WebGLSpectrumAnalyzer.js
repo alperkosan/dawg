@@ -406,7 +406,8 @@ export class WebGLSpectrumAnalyzer {
       `spectrum_${Math.random().toString(36).substr(2, 9)}`,
       () => this._render(),
       5, // High priority (visualizations)
-      16 // 60fps
+      16, // 60fps
+      true // ✅ Continuous rendering (always active)
     );
 
     console.log('▶️ WebGL Spectrum Analyzer started');

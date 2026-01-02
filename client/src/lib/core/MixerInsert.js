@@ -98,7 +98,9 @@ export class MixerInsert {
     };
 
     // Control states
-    this.isMuted = false;
+    this.isMuted = false;      // Effective mute state (user || solo)
+    this.userMuted = false;    // User manually muted
+    this.soloMuted = false;    // Muted by solo system
     this.isMono = false;
     this.savedGain = 0.8; // For mute/unmute
 
@@ -874,58 +876,68 @@ export class MixerInsert {
   }
 
   /**
-   * Mute/Unmute toggle
+   * Mute/Unmute toggle (User Action)
    */
   setMute(muted) {
-    this.isMuted = muted;
+    this.userMuted = muted;
+    this._updateEffectiveMute();
+    console.log(`🔇 ${this.insertId}: User Mute=${muted}`);
+  }
 
-    if (muted) {
-      // Save current gain and mute
-      this.savedGain = this.gainNode.gain.value;
+  /**
+   * Set mute state based on global Solo status
+   * Called by NativeAudioEngine when handling solo logic
+   * @param {boolean} muted - Whether this channel should be muted due to solo
+   */
+  setSoloMute(muted) {
+    if (this.soloMuted === muted) return;
+
+    this.soloMuted = muted;
+    this._updateEffectiveMute();
+    // console.log(`🎧 ${this.insertId}: Solo Mute=${muted}`);
+  }
+
+  /**
+   * Calculate and apply effective mute state
+   * @private
+   */
+  _updateEffectiveMute() {
+    // Effective mute is true if EITHER user muted OR solo logic muted
+    const newMuteState = this.userMuted || this.soloMuted;
+
+    if (this.isMuted === newMuteState) return;
+
+    this.isMuted = newMuteState;
+
+    if (newMuteState) {
+      // Save current gain (only if it wasn't already 0)
+      if (this.gainNode.gain.value > 0.001) {
+        this.savedGain = this.gainNode.gain.value;
+      }
+      this.gainNode.gain.cancelScheduledValues(this.audioContext.currentTime);
       this.gainNode.gain.setValueAtTime(0, this.audioContext.currentTime);
     } else {
       // Restore saved gain
-      this.gainNode.gain.setValueAtTime(this.savedGain, this.audioContext.currentTime);
+      this.gainNode.gain.cancelScheduledValues(this.audioContext.currentTime);
+      // Use small ramp to prevent clicks
+      this.gainNode.gain.setValueAtTime(0, this.audioContext.currentTime);
+      this.gainNode.gain.linearRampToValueAtTime(this.savedGain, this.audioContext.currentTime + 0.01);
     }
-
-    console.log(`🔇 ${this.insertId}: ${muted ? 'Muted' : 'Unmuted'}`);
   }
 
   /**
-   * Mono/Stereo toggle
-   */
-  setMono(mono) {
-    this.isMono = mono;
-
-    if (mono) {
-      // Center pan (mono)
-      this.panNode.pan.setValueAtTime(0, this.audioContext.currentTime);
-    }
-    // Note: User can adjust pan after disabling mono
-
-    console.log(`🎚️ ${this.insertId}: ${mono ? 'Mono' : 'Stereo'}`);
-  }
-
-  /**
-   * Solo toggle
-   * @param {boolean} soloed - Whether this channel is soloed
-   * @param {boolean} isAnySoloed - Whether any channel is soloed
+   * Legacy setSolo for compatibility (Deprecated, use setSoloMute)
    */
   setSolo(soloed, isAnySoloed) {
     if (isAnySoloed) {
-      // If any channel is soloed, mute all non-soloed channels
       if (!soloed) {
-        this.setMute(true);
+        this.setSoloMute(true);
       } else {
-        this.setMute(false);
+        this.setSoloMute(false);
       }
     } else {
-      // No solo active, restore normal mute state
-      // This will be handled by store's mutedChannels state
-      this.setMute(false);
+      this.setSoloMute(false);
     }
-
-    console.log(`🎧 ${this.insertId}: Solo=${soloed}, AnySoloed=${isAnySoloed}`);
   }
 
   /**

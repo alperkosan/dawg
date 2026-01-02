@@ -4,6 +4,7 @@
  */
 
 import React from 'react';
+import { createPortal } from 'react-dom';
 import './ConfirmationModal.css';
 
 export default function ConfirmationModal({
@@ -24,14 +25,16 @@ export default function ConfirmationModal({
     }
   };
 
-  return (
+  // ✅ FIX: Use Portal to render outside stacking context (fixes centering issues)
+  return createPortal(
     <div className="confirmation-modal-overlay" onClick={handleOverlayClick}>
       <div className="confirmation-modal" onClick={(e) => e.stopPropagation()}>
         <div className="confirmation-modal__header">
           <h2 className="confirmation-modal__title">{title}</h2>
         </div>
         <div className="confirmation-modal__body">
-          <p className="confirmation-modal__message">{message}</p>
+          {/* ✅ FIX: Use div instead of p to allow block content (nested divs/uls) */}
+          <div className="confirmation-modal__message">{message}</div>
         </div>
         <div className="confirmation-modal__actions">
           <button
@@ -50,7 +53,8 @@ export default function ConfirmationModal({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
