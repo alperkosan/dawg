@@ -14,12 +14,14 @@ import { logger, NAMESPACES } from '../../utils/debugLogger.js';
 /**
  * Default worklet configurations
  */
+const getWorkletPath = (path) => `${window.location.origin}${path}`;
+
 const DEFAULT_WORKLETS = [
-    { path: '/worklets/text-encoder-polyfill.js', name: 'text-encoder-polyfill' },
-    { path: '/worklets/instrument-processor.js', name: 'instrument-processor' },
-    { path: '/worklets/mixer-processor.js', name: 'mixer-processor', isModule: true },
-    { path: '/worklets/analysis-processor.js', name: 'analysis-processor' },
-    { path: '/worklets/wasm-sampler-processor.js', name: 'wasm-sampler-processor', isModule: true }
+    { path: getWorkletPath('/worklets/text-encoder-polyfill.js'), name: 'text-encoder-polyfill' },
+    { path: getWorkletPath('/worklets/instrument-processor.js'), name: 'instrument-processor' },
+    { path: getWorkletPath('/worklets/mixer-processor.js'), name: 'mixer-processor', isModule: true },
+    { path: getWorkletPath('/worklets/analysis-processor.js'), name: 'analysis-processor' },
+    { path: getWorkletPath('/worklets/wasm-sampler-processor.js'), name: 'wasm-sampler-processor', isModule: true }
 ];
 
 export class WorkletService {

@@ -118,8 +118,15 @@ class WasmAudioEngine {
             this.audioContext = audioContext;
 
             // Dynamic import WASM module
+            // ✅ FIX: Use absolute URL for import to work in all environments (Vercel/Vite/Dev)
+            // This prevents issues with relative paths in dynamic imports
             const dynamicImport = new Function('path', 'return import(path)');
-            const wasmModulePath = '/wasm/dawg_audio_dsp.js';
+
+            // Determine base URL
+            const baseUrl = window.location.origin;
+            const wasmModulePath = `${baseUrl}/wasm/dawg_audio_dsp.js`;
+
+            console.log(`🚀 Loading WASM module from: ${wasmModulePath}`);
 
             this.wasmModule = await dynamicImport(wasmModulePath);
             await this.wasmModule.default();

@@ -554,12 +554,15 @@ export class NativeAudioEngine {
     async _loadRequiredWorklets() {
         try {
 
+            // ✅ FIX: Use absolute URLs for worklets
+            const getPath = (p) => `${window.location.origin}${p}`;
+
             const workletConfigs = [
-                { path: '/worklets/text-encoder-polyfill.js', name: 'text-encoder-polyfill' },
-                { path: '/worklets/instrument-processor.js', name: 'instrument-processor' },
-                { path: '/worklets/mixer-processor.js', name: 'mixer-processor' },
-                { path: '/worklets/analysis-processor.js', name: 'analysis-processor' },
-                { path: '/worklets/wasm-sampler-processor.js', name: 'wasm-sampler-processor' } // ✅ WASM Sampler
+                { path: getPath('/worklets/text-encoder-polyfill.js'), name: 'text-encoder-polyfill' },
+                { path: getPath('/worklets/instrument-processor.js'), name: 'instrument-processor' },
+                { path: getPath('/worklets/mixer-processor.js'), name: 'mixer-processor' },
+                { path: getPath('/worklets/analysis-processor.js'), name: 'analysis-processor' },
+                { path: getPath('/worklets/wasm-sampler-processor.js'), name: 'wasm-sampler-processor' } // ✅ WASM Sampler
             ];
 
             const results = await this.workletManager.loadMultipleWorklets(workletConfigs);
