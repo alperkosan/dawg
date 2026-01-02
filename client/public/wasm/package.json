@@ -1,0 +1,15 @@
+{
+  "name": "dawg-audio-dsp",
+  "type": "module",
+  "version": "0.1.0",
+  "files": [
+    "dawg_audio_dsp_bg.wasm",
+    "dawg_audio_dsp.js",
+    "dawg_audio_dsp.d.ts"
+  ],
+  "main": "dawg_audio_dsp.js",
+  "types": "dawg_audio_dsp.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}
