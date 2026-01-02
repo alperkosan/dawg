@@ -5,7 +5,7 @@ import { usePanelsStore } from '@/store/usePanelsStore'; // Panelleri açmak iç
 import { useArrangementStore } from '@/store/useArrangementStore';
 import ChannelContextMenu from '@/components/ChannelContextMenu';
 import ConfirmationModal from '@/components/common/ConfirmationModal';
-import { Music, Piano, Volume2, VolumeX, SlidersHorizontal } from 'lucide-react';
+import { Music, Piano, Volume2, VolumeX, SlidersHorizontal, AlertTriangle } from 'lucide-react';
 import { Knob } from '@/components/controls';
 import commandManager from '@/lib/commands/CommandManager';
 import { AddNoteCommand } from '@/lib/commands/AddNoteCommand';
