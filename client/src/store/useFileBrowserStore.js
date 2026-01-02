@@ -21,11 +21,14 @@ function normalizeAssetUrl(storageUrl, assetId, isSystemAsset = false, storageKe
   );
   const isSystem = isSystemAsset || looksLikeSystemUrl;
 
-  // ✅ FIX: Force API proxy for user assets to avoid CORS issues
-  // User assets on BunnyCDN might have strict CORS policies that block direct browser access
-  // The API proxy (/api/assets/:id/file) handles the fetch server-side and adds proper CORS headers
-  if (assetId && !isSystem) {
-    return `${apiClient.baseURL}/assets/${assetId}/file`;
+  // ✅ FIX: Force API proxy for ALL assets (including system) to avoid CORS issues
+  // The CDN might block direct browser access, so we route through our backend
+  if (assetId) {
+    // If it's a user asset OR a system asset causing CORS, proxy it.
+    // We treat everything with an ID as a database asset that can be proxied.
+    // For purely static manifest files without IDs, we might fallback to raw URLs, 
+    // but here we are dealing with db-indexed assets.
+    return `${apiClient.baseURL}/assets/${isSystem ? 'system/' : ''}${assetId}/file`;
   }
 
   // Prefer absolute CDN URLs when already provided
