@@ -752,6 +752,7 @@ function ChannelRackComponent() {
           onPositionChange={null} // ✅ TimelineController handles store updates now
           height={32} // Timeline height in pixels
           scrollX={scrollX}
+          scrollContainerRef={scrollContainerRef} // ✅ PERFORMANCE: Direct scroll access for low-latency sync
           viewportWidth={viewportWidth}
           activePattern={activePattern} // ✅ For note preview on seek
           instruments={visibleInstruments} // ✅ For note preview on seek

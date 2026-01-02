@@ -477,6 +477,16 @@ export class RenderEngine {
         await insert.loadState(trackData, EffectFactory);
         insert.output.connect(masterBus);
         ghostMixer.set(trackId, insert);
+
+        // 🎯 DEBUG: Log effect chain for each mixer insert
+        const effectCount = insert.effects?.size || 0;
+        console.log(`🎛️ [EXPORT] Mixer insert ${trackId}: ${effectCount} effects loaded`, {
+          trackId,
+          trackName: trackData.name,
+          effectCount,
+          effectOrder: insert.effectOrder,
+          inputEffects: trackData.insertEffects?.length || 0
+        });
       }
 
       // 6. SETUP INSTRUMENTS (GHOSTS)
@@ -995,6 +1005,13 @@ export class RenderEngine {
             const destination = ghostInsert ? ghostInsert.input : masterBusNode;
             ghost.output.connect(destination);
             ghostInstruments.set(instrumentId, ghost);
+
+            // 🎯 DEBUG: Log where instrument connects to
+            console.log(`🔌 [EXPORT] Instrument ${instrumentId} connected to:`, {
+              mixerTrackId,
+              hasGhostInsert: !!ghostInsert,
+              destination: ghostInsert ? `ghostInsert.input (${mixerTrackId})` : 'masterBus (NO EFFECTS!)'
+            });
           }
         }
 

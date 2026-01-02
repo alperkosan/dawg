@@ -307,7 +307,7 @@ class TransportController {
 
         // ✅ FIX: Ghost position should NOT affect main playhead during playback
         // Ghost is only for visual hover preview, not actual playback position
-        const targetPosition = this.isPlaying ? predictedPosition : (this.ghostPosition ?? predictedPosition);
+        const targetPosition = predictedPosition;
 
         // Lerp for ultra-smooth movement
         interp.visualPosition = this._lerp(
@@ -366,12 +366,13 @@ class TransportController {
     }
 
     /**
+    /**
      * Batched timeline updates
      * ✅ PERFORMANCE FIX: Pass interpolated visual position for smoother playhead
      */
-    _updateAllTimelinesBatched() {
-        // Use interpolated position for smooth 60fps updates
-        const visualPosition = this._interpolation.visualPosition;
+    _updateAllTimelinesBatched(overridePosition = null) {
+        // Use interpolated position for smooth 60fps updates unless overridden
+        const visualPosition = overridePosition ?? this._interpolation.visualPosition;
 
         for (const [id, timeline] of this.timelineElements) {
             const { updateCallback } = timeline;
@@ -417,7 +418,8 @@ class TransportController {
             await this.audioEngine.audioContext.resume();
         }
 
-        const step = startStep ?? (this.isPaused ? this.currentStep : this.loopStart);
+        // ✅ FIX: Start from currentStep if not provided (allows playing from jump position)
+        const step = startStep ?? this.currentStep;
 
         // ✅ FIX: Only call PlaybackFacade.play() - it handles transport.start() internally
         // Previously we were calling both transport.start() AND playbackFacade.play()
@@ -655,7 +657,7 @@ class TransportController {
 
         if (updateUI) {
             this._updateAllPlayheadsBatched();
-            this._updateAllTimelinesBatched();
+            this._updateAllTimelinesBatched(newStep);
         }
 
         // Notify registered timelines onSeek (e.g. for note preview)

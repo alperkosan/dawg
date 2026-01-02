@@ -141,8 +141,9 @@ function Toolbar({
                     <button
                         className={`prv7-tool-btn prv7-record-btn ${isRecording ? 'prv7-record-btn--recording' : ''}`}
                         onClick={onRecordToggle}
-                        title={`${isRecording ? 'Stop Recording' : 'Start Recording'} (R)`}
-                        style={{ marginRight: '8px' }}
+                        disabled={isRecording}
+                        title={`${isRecording ? 'Recording... (Press Stop to finish)' : 'Start Recording'} (R)`}
+                        style={{ marginRight: '8px', opacity: isRecording ? 0.8 : 1, cursor: isRecording ? 'not-allowed' : 'pointer' }}
                     >
                         <Circle
                             size={18}

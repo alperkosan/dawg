@@ -228,6 +228,7 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
     const backgroundDirtyRef = useRef(true);
     const notesDirtyRef = useRef(true);
     const notesDirtyRegionRef = useRef(null);
+    const midiRecorderRef = useRef(null); // MIDI Recording
 
     const markBackgroundDirty = useCallback(() => {
         backgroundDirtyRef.current = true;
@@ -351,10 +352,22 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
 
     // ✅ MIDI RECORDING STATE
     // ✅ MIDI RECORDING HOOK
-    const { isRecording, isCountingIn, countInBars } = useMidiRecording({
+    const {
+        isRecording,
+        isCountingIn,
+        countInBars,
+        recorder: midiRecorder,
+        toggleRecording,
+        setIsRecording,
+        setIsCountingIn,
+        setCountInBars
+    } = useMidiRecording({
         currentInstrument,
         loopRegion
     });
+
+    // Assign to ref so callbacks can access it
+    midiRecorderRef.current = midiRecorder;
 
 
     // ✅ Listen for double-click events to open Note Properties Panel
@@ -1713,23 +1726,20 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
                 }}
                 onScaleHighlightToggle={() => setScaleHighlightEnabled(!scaleHighlightEnabled)}
                 // ✅ MIDI Recording
-                isRecording={isRecording}
+                isRecording={isRecording || isCountingIn}
                 onRecordToggle={async () => {
-                    const recorder = midiRecorderRef.current;
-                    if (!recorder) return;
+                    const wasRecording = isRecording;
+                    await toggleRecording();
 
-                    if (isRecording) {
-                        await recorder.stopRecording();
-                        setIsRecording(false);
-                    } else {
-                        const success = recorder.startRecording({
-                            mode: 'replace', // Default mode
-                            quantizeStrength: 0,
-                            countInBars: 1
-                        });
-                        if (success) {
-                            setIsRecording(true);
-                        }
+                    // ✅ Auto-enable keyboard mode if starting recording
+                    if (!wasRecording && !keyboardPianoMode) {
+                        setKeyboardPianoMode(true);
+                    }
+
+                    // ✅ UX FIX: Switch to Select Mode when recording starts
+                    // This prevents accidental drawing/painting while trying to play
+                    if (!wasRecording) {
+                        handleToolChange('select');
                     }
                 }}
             />

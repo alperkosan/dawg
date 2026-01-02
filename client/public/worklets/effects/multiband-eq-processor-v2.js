@@ -30,12 +30,12 @@ class MultiBandEQProcessorV2 extends AudioWorkletProcessor {
 
     // Stereo channel state
     this.channelState = [
-      { 
+      {
         filters: this.createFilters(this.bands.length),
         // ✅ NEW: Dynamic EQ state per band (envelope followers)
         dynamicState: this.bands.map(() => ({ envelope: 0, gainReduction: 1.0 }))
       },
-      { 
+      {
         filters: this.createFilters(this.bands.length),
         dynamicState: this.bands.map(() => ({ envelope: 0, gainReduction: 1.0 }))
       }
@@ -82,8 +82,8 @@ class MultiBandEQProcessorV2 extends AudioWorkletProcessor {
     return {
       // Coefficients (pre-normalized)
       b0: 1, b1: 0, b2: 0, a1: 0, a2: 0,
-      // State variables
-      x1: 0, x2: 0, y1: 0, y2: 0
+      // 🎯 EQ-1: Transposed Direct Form II state (more stable than DF-I)
+      s1: 0, s2: 0
     };
   }
 
@@ -216,19 +216,23 @@ class MultiBandEQProcessorV2 extends AudioWorkletProcessor {
   }
 
   /**
-   * Process single sample through biquad filter
+   * 🎯 EQ-1: Process single sample through biquad filter
+   * Transposed Direct Form II (TDF-II) for better numerical stability
+   * with high-Q filters near Nyquist frequency (industry standard)
    */
   processBiquad(sample, filter) {
-    const y = filter.b0 * sample +
-              filter.b1 * filter.x1 +
-              filter.b2 * filter.x2 -
-              filter.a1 * filter.y1 -
-              filter.a2 * filter.y2;
+    // TDF-II: y = b0*x + s1
+    const y = filter.b0 * sample + filter.s1;
 
-    filter.x2 = filter.x1;
-    filter.x1 = sample;
-    filter.y2 = filter.y1;
-    filter.y1 = y;
+    // Update state registers
+    filter.s1 = filter.b1 * sample - filter.a1 * y + filter.s2;
+    filter.s2 = filter.b2 * sample - filter.a2 * y;
+
+    // Safety check for numerical stability
+    if (!isFinite(y)) {
+      filter.s1 = filter.s2 = 0;
+      return sample;
+    }
 
     return y;
   }
@@ -240,31 +244,31 @@ class MultiBandEQProcessorV2 extends AudioWorkletProcessor {
   processDynamicEQ(sample, bandIndex, channel, state) {
     const band = this.bands[bandIndex];
     const dynamicState = state.dynamicState[bandIndex];
-    
+
     // Convert sample to dB
     const absSample = Math.abs(sample);
     const sampleDb = absSample > 0.0001 ? 20 * Math.log10(absSample) : -80;
-    
+
     // Envelope follower (RMS-style, with attack/release)
     const targetEnvelope = Math.abs(sample);
     const currentEnvelope = dynamicState.envelope;
-    
+
     // Attack/release coefficients
     const attackTime = Math.max(0.001, band.attack / 1000); // ms to seconds
     const releaseTime = Math.max(0.001, band.release / 1000);
     const attackCoeff = Math.exp(-1 / (attackTime * this.sampleRate));
     const releaseCoeff = Math.exp(-1 / (releaseTime * this.sampleRate));
-    
+
     // Update envelope
     if (targetEnvelope > currentEnvelope) {
       dynamicState.envelope = targetEnvelope + (currentEnvelope - targetEnvelope) * attackCoeff;
     } else {
       dynamicState.envelope = targetEnvelope + (currentEnvelope - targetEnvelope) * releaseCoeff;
     }
-    
+
     // Convert envelope to dB
     const envelopeDb = dynamicState.envelope > 0.0001 ? 20 * Math.log10(dynamicState.envelope) : -80;
-    
+
     // Calculate gain reduction if threshold is exceeded
     if (envelopeDb > band.threshold) {
       const overThreshold = envelopeDb - band.threshold;
@@ -275,7 +279,7 @@ class MultiBandEQProcessorV2 extends AudioWorkletProcessor {
       // Release gain reduction smoothly
       dynamicState.gainReduction = 1.0 + (dynamicState.gainReduction - 1.0) * releaseCoeff;
     }
-    
+
     // Apply gain reduction
     return sample * dynamicState.gainReduction;
   }
@@ -316,7 +320,7 @@ class MultiBandEQProcessorV2 extends AudioWorkletProcessor {
         for (let b = 0; b < this.bands.length; b++) {
           if (this.bands[b].active) {
             processed = this.processBiquad(processed, state.filters[b]);
-            
+
             // ✅ NEW: Apply Dynamic EQ if enabled
             if (this.bands[b].dynamicEnabled) {
               processed = this.processDynamicEQ(processed, b, channel, state);

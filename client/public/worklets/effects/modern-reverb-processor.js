@@ -61,7 +61,7 @@ class ModernReverbProcessor extends AudioWorkletProcessor {
     this.reverbAlgorithm = 0; // 0=Room, 1=Hall, 2=Plate, 3=Spring, 4=Chamber
     this.baseTankDelays = [0.0297, 0.0371, 0.0411, 0.0437]; // Default (Room)
     this.tankFilters = this.baseTankDelays.map(d => new ModulatedAllpass(d, this.sampleRate));
-    
+
     // ✅ NEW: Algorithm-specific early reflections patterns (initialized per algorithm)
     this.algorithmERPatterns = {
       room: { erTapsL: this.erTapsL, erTapsR: this.erTapsR }, // Current default
@@ -70,15 +70,20 @@ class ModernReverbProcessor extends AudioWorkletProcessor {
       spring: null,
       chamber: null
     };
-    
-    // ✅ NEW: High-cut filter (for reverb tail EQ)
-    this.tankLPF = new LowPassFilter(this.sampleRate);
 
-    // Diffusion steps
+    // 🎯 REV-3: Separate LPF instances for true stereo filtering
+    this.tankLPF_L = new LowPassFilter(this.sampleRate);
+    this.tankLPF_R = new LowPassFilter(this.sampleRate);
+
+    // 🎯 REV-2: Increased diffusion stages (6 cascaded AP for denser reverb)
     this.diffuser1L = new AllpassFilter(0.005, this.sampleRate);
     this.diffuser1R = new AllpassFilter(0.005, this.sampleRate);
     this.diffuser2L = new AllpassFilter(0.012, this.sampleRate);
     this.diffuser2R = new AllpassFilter(0.012, this.sampleRate);
+    this.diffuser3L = new AllpassFilter(0.019, this.sampleRate);
+    this.diffuser3R = new AllpassFilter(0.019, this.sampleRate);
+    this.diffuser4L = new AllpassFilter(0.027, this.sampleRate);
+    this.diffuser4R = new AllpassFilter(0.027, this.sampleRate);
 
     // Pre-delay
     this.maxPreDelay = Math.ceil(0.5 * this.sampleRate);
@@ -114,13 +119,22 @@ class ModernReverbProcessor extends AudioWorkletProcessor {
     this.diffuser1R.reset();
     this.diffuser2L.reset();
     this.diffuser2R.reset();
+    // 🎯 REV-2: Reset additional diffusion stages
+    this.diffuser3L.reset();
+    this.diffuser3R.reset();
+    this.diffuser4L.reset();
+    this.diffuser4R.reset();
     this.inputHPF.reset();
     this.tankHPF.reset();
-    this.tankLPF.reset(); // ✅ NEW: Reset low-pass filter
+    // 🎯 REV-3: Reset stereo LPF instances
+    this.tankLPF_L.reset();
+    this.tankLPF_R.reset();
     this.shimmerL.reset();
     this.shimmerR.reset();
+    // 🎯 REV-1 FIX: Reset Hadamard FDN feedback to prevent tail leak
+    this.tankFeedback = [0, 0, 0, 0];
   }
-  
+
   // ✅ NEW: Update algorithm-specific settings
   _updateAlgorithm(algorithm) {
     switch (algorithm) {
@@ -200,7 +214,7 @@ class ModernReverbProcessor extends AudioWorkletProcessor {
         ];
         break;
     }
-    
+
     // Recreate tank filters with new delays
     this.tankFilters = this.baseTankDelays.map(d => new ModulatedAllpass(d, this.sampleRate));
   }
@@ -232,10 +246,10 @@ class ModernReverbProcessor extends AudioWorkletProcessor {
     const lowCut = this.getParam(parameters.lowCut, 0) ?? 100;
     const highCut = this.getParam(parameters.highCut, 0) ?? 20000; // ✅ NEW: High cut filter
     const shimmer = this.getParam(parameters.shimmer, 0) ?? 0.0;
-    
+
     // ✅ NEW: Reverb algorithm parameter
     const reverbAlgorithm = Math.floor(this.getParam(parameters.reverbAlgorithm, 0) ?? this.settings.reverbAlgorithm ?? 0);
-    
+
     // ✅ NEW: Update algorithm-specific settings if changed
     if (reverbAlgorithm !== this.reverbAlgorithm) {
       this._updateAlgorithm(reverbAlgorithm);
@@ -313,26 +327,64 @@ class ModernReverbProcessor extends AudioWorkletProcessor {
         tankIn += (shiftL + shiftR) * 0.5 * shimmer;
       }
 
-      // Parallel Modulated Allpasses
-      let t1 = this.tankFilters[0].process(tankIn, safeFeedback, dampCoeff, modDepth, modRate, size);
-      let t2 = this.tankFilters[1].process(tankIn, safeFeedback, dampCoeff, modDepth, modRate + 0.1, size);
-      let t3 = this.tankFilters[2].process(tankIn, safeFeedback, dampCoeff, modDepth, modRate + 0.2, size);
-      let t4 = this.tankFilters[3].process(tankIn, safeFeedback, dampCoeff, modDepth, modRate + 0.3, size);
+      // 🎯 REV-1: DATTORRO FDN TANK with Hadamard mixing matrix
+      // Cross-coupled delay network for dense, rich reverb tail
 
-      let m1 = t1 + t2 + t3 + t4;
+      // Get previous tank feedback (stored from last sample)
+      // Apply damping to feedback to prevent runaway
+      const fbDamp = safeFeedback * 0.6; // Reduce feedback intensity
+      const fb0 = this.tankFeedback ? this.tankFeedback[0] * fbDamp : 0;
+      const fb1 = this.tankFeedback ? this.tankFeedback[1] * fbDamp : 0;
+      const fb2 = this.tankFeedback ? this.tankFeedback[2] * fbDamp : 0;
+      const fb3 = this.tankFeedback ? this.tankFeedback[3] * fbDamp : 0;
 
-      // Diffusion
+      // Inject input into each tank with feedback (reduced injection for stability)
+      const in0 = tankIn * 0.3 + fb0;
+      const in1 = tankIn * 0.2 + fb1;
+      const in2 = tankIn * 0.2 + fb2;
+      const in3 = tankIn * 0.3 + fb3;
+
+      // Process through modulated allpass filters (reduced internal feedback)
+      const t0 = this.tankFilters[0].process(in0, 0.3, dampCoeff, modDepth, modRate, size);
+      const t1 = this.tankFilters[1].process(in1, 0.3, dampCoeff, modDepth, modRate + 0.1, size);
+      const t2 = this.tankFilters[2].process(in2, 0.3, dampCoeff, modDepth, modRate + 0.2, size);
+      const t3 = this.tankFilters[3].process(in3, 0.3, dampCoeff, modDepth, modRate + 0.3, size);
+
+      // 🎯 HADAMARD MATRIX MIXING (4x4 normalized orthogonal matrix)
+      // H = 1/2 * [[1,1,1,1], [1,-1,1,-1], [1,1,-1,-1], [1,-1,-1,1]]
+      const h0 = 0.5 * (t0 + t1 + t2 + t3);
+      const h1 = 0.5 * (t0 - t1 + t2 - t3);
+      const h2 = 0.5 * (t0 + t1 - t2 - t3);
+      const h3 = 0.5 * (t0 - t1 - t2 + t3);
+
+      // Store mixed outputs for next iteration's feedback (with soft limiting)
+      if (!this.tankFeedback) this.tankFeedback = [0, 0, 0, 0];
+      // Use tanh to prevent energy explosion
+      this.tankFeedback[0] = Math.tanh(h0);
+      this.tankFeedback[1] = Math.tanh(h1);
+      this.tankFeedback[2] = Math.tanh(h2);
+      this.tankFeedback[3] = Math.tanh(h3);
+
+      // Sum for output (using different taps for L/R decorrelation)
+      let m1 = (h0 + h2) * 0.5 + (h1 + h3) * 0.3;
+
+      // 🎯 REV-2: 6-stage diffusion for denser reverb
       let lateL = this.diffuser1L.process(m1, diffFeedback);
       lateL = this.diffuser2L.process(lateL, diffFeedback);
+      lateL = this.diffuser3L.process(lateL, diffFeedback * 0.8);
+      lateL = this.diffuser4L.process(lateL, diffFeedback * 0.6);
 
       let lateR = this.diffuser1R.process(m1, diffFeedback);
       lateR = this.diffuser2R.process(lateR, diffFeedback);
-      
-      // ✅ NEW: Apply high-cut filter to reverb tail
+      lateR = this.diffuser3R.process(lateR, diffFeedback * 0.8);
+      lateR = this.diffuser4R.process(lateR, diffFeedback * 0.6);
+
+      // 🎯 REV-3: Separate L/R high-cut filters for true stereo
       if (highCut < 20000) {
-        this.tankLPF.update(highCut);
-        lateL = this.tankLPF.process(lateL);
-        lateR = this.tankLPF.process(lateR);
+        this.tankLPF_L.update(highCut);
+        this.tankLPF_R.update(highCut);
+        lateL = this.tankLPF_L.process(lateL);
+        lateR = this.tankLPF_R.process(lateR);
       }
 
       // 4. Mix Early/Late

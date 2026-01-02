@@ -84,8 +84,14 @@ class CompressorProcessor extends AudioWorkletProcessor {
     this.delayIdx = [0, 0];
     this.delaySamples = 0;
 
-    // Sidechain filter state
-    this.scState = [0, 0];
+    // 🎯 COMP-3: Upgraded sidechain filter state (biquad 12dB/oct)
+    this.scBiquadState = [
+      { x1: 0, x2: 0, y1: 0, y2: 0 },
+      { x1: 0, x2: 0, y1: 0, y2: 0 }
+    ];
+    this.scBiquadCoeffs = null; // Cached coefficients
+    this.lastScFreq = -1;
+    this.lastScFilterType = -1;
 
     // 🎯 NEW v2.0: RMS detection buffers (circular buffer per channel)
     // Max window = 50ms at 48kHz = 2400 samples
@@ -144,8 +150,13 @@ class CompressorProcessor extends AudioWorkletProcessor {
     const scFreq = this.getParam(parameters.scFreq, 0) ?? (this.settings.scFreq ?? 150);
     const scListen = (this.getParam(parameters.scListen, 0) ?? this.settings.scListen ?? 0) >= 0.5;
     const scGain = this.dbToGain(scGainDb);
-    const omega = 2 * Math.PI * Math.max(20, Math.min(2000, scFreq)) / this.sampleRate;
-    const coef = Math.exp(-omega);
+
+    // 🎯 COMP-3: Update biquad coefficients if frequency or type changed
+    if (scFreq !== this.lastScFreq || scFilterType !== this.lastScFilterType) {
+      this.scBiquadCoeffs = this.calculateScBiquadCoeffs(scFreq, scFilterType);
+      this.lastScFreq = scFreq;
+      this.lastScFilterType = scFilterType;
+    }
 
     if (this.bypassed) {
       for (let channel = 0; channel < channelCount; channel++) {
@@ -185,15 +196,9 @@ class CompressorProcessor extends AudioWorkletProcessor {
         if (scEnable && scInput && scInput[channel] && scInput[channel].length > i) {
           detect = scInput[channel][i] * scGain;
         }
-        // Apply SC filter (HPF/LPF one-pole) to detection only
-        if (scFilterType === 1) {
-          // HPF: x - lp
-          this.scState[channel] = coef * this.scState[channel] + (1 - coef) * detect;
-          detect = detect - this.scState[channel];
-        } else if (scFilterType === 2) {
-          // LPF
-          this.scState[channel] = coef * this.scState[channel] + (1 - coef) * detect;
-          detect = this.scState[channel];
+        // 🎯 COMP-3: Apply SC filter (biquad 12dB/oct HPF/LPF) for sharper detection
+        if (scFilterType !== 0 && this.scBiquadCoeffs) {
+          detect = this.applyScBiquad(detect, channel);
         }
 
         // Write to lookahead buffer and read delayed sample
@@ -211,9 +216,9 @@ class CompressorProcessor extends AudioWorkletProcessor {
         // 🎯 NEW: Get mix/blend parameter for parallel compression
         const mixParam = this.getParam(parameters.mix, 0) ?? (this.settings.mix ?? 100);
         const mix = Math.max(0, Math.min(100, mixParam)) / 100; // 0-1 range
-        
+
         const wetSample = this.processEffect(delayedSample, channel, parameters, stereoLink, detect);
-        
+
         // 🎯 NEW: Parallel compression (mix control)
         // mix=0: 100% dry (no compression), mix=1: 100% wet (full compression)
         outputChannel[i] = drySample * (1 - mix) + wetSample * mix;
@@ -296,10 +301,10 @@ class CompressorProcessor extends AudioWorkletProcessor {
     // 🎯 NEW v2.0: Detection mode (Peak vs RMS)
     const detectionMode = Math.round(this.getParam(parameters.detectionMode, 0) ?? this.settings.detectionMode ?? 0);
     const rmsWindowMs = this.getParam(parameters.rmsWindow, 0) ?? this.settings.rmsWindow ?? 10;
-    
+
     // 🎯 NEW: Compressor model (0=Clean/VCA, 1=Opto, 2=FET)
     const compressorModel = Math.round(this.getParam(parameters.compressorModel, 0) ?? this.settings.compressorModel ?? 0);
-    
+
     // Apply model characteristics (modify attack/release/knee based on model)
     if (compressorModel === 1) {
       // OPTO (LA-2A style): Smooth, musical, slower attack/release
@@ -409,7 +414,12 @@ class CompressorProcessor extends AudioWorkletProcessor {
 
     // Apply total gain change
     const gain = this.dbToGain(gainChange - (grDb - Math.abs(gainChange))); // apply linked GR if any
-    return sample * gain;
+    let output = sample * gain;
+
+    // 🎯 COMP-1: Apply model-specific saturation for analog character
+    output = this.applyModelSaturation(output, compressorModel);
+
+    return output;
   }
 
   // Utility functions
@@ -424,6 +434,113 @@ class CompressorProcessor extends AudioWorkletProcessor {
 
   dbToGain(db) {
     return Math.pow(10, db / 20);
+  }
+
+  // 🎯 COMP-3: Calculate biquad coefficients for 12dB/oct HPF or LPF
+  calculateScBiquadCoeffs(freq, filterType) {
+    const clampedFreq = Math.max(20, Math.min(2000, freq));
+    const omega = 2 * Math.PI * clampedFreq / this.sampleRate;
+    const cosOmega = Math.cos(omega);
+    const sinOmega = Math.sin(omega);
+    const Q = 0.707; // Butterworth Q for flat response
+    const alpha = sinOmega / (2 * Q);
+
+    let b0, b1, b2, a0, a1, a2;
+
+    if (filterType === 1) {
+      // HPF (High-pass filter)
+      b0 = (1 + cosOmega) / 2;
+      b1 = -(1 + cosOmega);
+      b2 = (1 + cosOmega) / 2;
+      a0 = 1 + alpha;
+      a1 = -2 * cosOmega;
+      a2 = 1 - alpha;
+    } else if (filterType === 2) {
+      // LPF (Low-pass filter)
+      b0 = (1 - cosOmega) / 2;
+      b1 = 1 - cosOmega;
+      b2 = (1 - cosOmega) / 2;
+      a0 = 1 + alpha;
+      a1 = -2 * cosOmega;
+      a2 = 1 - alpha;
+    } else {
+      // Passthrough
+      return { b0: 1, b1: 0, b2: 0, a1: 0, a2: 0 };
+    }
+
+    // Pre-normalize by a0
+    return {
+      b0: b0 / a0,
+      b1: b1 / a0,
+      b2: b2 / a0,
+      a1: a1 / a0,
+      a2: a2 / a0
+    };
+  }
+
+  // 🎯 COMP-3: Apply biquad filter to sidechain signal
+  applyScBiquad(sample, channel) {
+    const c = this.scBiquadCoeffs;
+    const s = this.scBiquadState[channel];
+
+    // Direct Form I
+    const y = c.b0 * sample + c.b1 * s.x1 + c.b2 * s.x2
+      - c.a1 * s.y1 - c.a2 * s.y2;
+
+    // Update state
+    s.x2 = s.x1;
+    s.x1 = sample;
+    s.y2 = s.y1;
+    s.y1 = y;
+
+    // Safety clamp
+    if (!isFinite(y)) {
+      s.x1 = s.x2 = s.y1 = s.y2 = 0;
+      return sample;
+    }
+
+    return y;
+  }
+
+  // 🎯 NEW COMP-1: Model-specific saturation for authentic analog character
+  // VCA (0): No saturation - clean, transparent
+  // Opto (1): Soft photocell saturation (LA-2A style) - smooth, musical
+  // FET (2): Aggressive transistor saturation (1176 style) - punchy, colored
+  applyModelSaturation(sample, model) {
+    if (model === 0) {
+      // VCA: Clean, no saturation
+      return sample;
+    } else if (model === 1) {
+      // OPTO (LA-2A style): Soft, symmetric photocell saturation
+      // Gentle tanh curve with subtle even harmonics
+      const drive = 1.2; // Subtle drive
+      const saturated = Math.tanh(sample * drive) / Math.tanh(drive);
+      // Add subtle 2nd harmonic (even = warm)
+      const harmonic2 = sample * Math.abs(sample) * 0.03;
+      return saturated + harmonic2;
+    } else if (model === 2) {
+      // FET (1176 style): Aggressive, asymmetric transistor saturation
+      // More coloration, punchy character with odd harmonics
+      const sign = Math.sign(sample);
+      const abs = Math.abs(sample);
+
+      // Asymmetric saturation (positive clips harder than negative)
+      let saturated;
+      if (sample > 0) {
+        // Positive: harder clipping (transistor forward bias)
+        const drive = 1.8;
+        saturated = Math.tanh(sample * drive) / Math.tanh(drive) * 0.95;
+      } else {
+        // Negative: softer clipping (transistor reverse)
+        const drive = 1.4;
+        saturated = Math.tanh(sample * drive) / Math.tanh(drive);
+      }
+
+      // Add 3rd harmonic (odd = punchy, aggressive)
+      const harmonic3 = sample * sample * sign * abs * 0.04;
+      return saturated + harmonic3;
+    }
+    return sample;
   }
 
   resetState() {

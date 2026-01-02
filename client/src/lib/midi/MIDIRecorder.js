@@ -364,12 +364,43 @@ export class MIDIRecorder {
             this.state.recordingBPM = 120; // Safe default
         }
 
-        // Disable loop during recording (save current state to restore later)
+        // ✅ LOOP HANDLING: Authoritative Logic
+        // 1. If loopRegion is set -> FORCE Loop Enabled
+        // 2. If loopRegion is null -> FORCE Loop Disabled (Linear Recording)
         const currentLoopEnabled = this.playbackStore.loopEnabled;
-        this.state.loopEnabledBeforeRecording = currentLoopEnabled;
-        if (currentLoopEnabled) {
-            await this.playbackStore.setLoopEnabled(false);
-            await new Promise(resolve => setTimeout(resolve, 10));
+
+        if (this.loopRegion) {
+            // Region selected: FORCE enable loop
+            console.log('⏺️ MIDIRecorder: Enabling loop for region', this.loopRegion);
+            await this.playbackStore.setLoopEnabled(true);
+            await this.playbackStore.setLoopRange(this.loopRegion.start, this.loopRegion.end);
+            this.state.loopEnabledBeforeRecording = currentLoopEnabled; // Restore previous state? Maybe not needed if we want it to stay enabled
+        } else {
+            // No region: FORCE disable loop (Linear Recording)
+            if (currentLoopEnabled) {
+                console.log('⏺️ MIDIRecorder: Disabling loop for linear recording');
+                // Store previous state to restore later
+                this.state.loopEnabledBeforeRecording = true;
+
+                // ✅ CRITICAL: Ensure TransportController receives this update immediately
+                await this.playbackStore.setLoopEnabled(false);
+
+                // If playing, we need to ensure the transport acknowledges this
+                // Tone.js transport looping check happens on tick. Disabling it should be immediate.
+                const audioEngine = AudioEngineGlobal.get();
+                if (audioEngine?.transport && typeof audioEngine.transport.setLoopEnabled === 'function') {
+                    audioEngine.transport.setLoopEnabled(false);
+                } else if (audioEngine?.transport) {
+                    // Fallback if no setLoopEnabled, though unlikely given inspection
+                    try {
+                        audioEngine.transport.loop = false;
+                    } catch (e) {
+                        // Ignore if readonly
+                    }
+                }
+            } else {
+                this.state.loopEnabledBeforeRecording = false;
+            }
         }
 
         // Start playback if not already playing
@@ -517,54 +548,39 @@ export class MIDIRecorder {
         // Only handle note events
         if (type !== 'noteOn' && type !== 'noteOff') return;
 
-        // ✅ AUDIOCONTEXT-BASED TIMING: Most reliable approach
-        // Transport position can jump unexpectedly, but AudioContext timing is consistent
+        // ✅ TRANSPORT-BASED TIMING: Single Source of Truth
+        // We trust the NativeTransportSystem. If it jumps, we jump. If it loops, we loop.
         let currentStep;
-        let positionSource = 'audioContext';
-        let transportStep = null; // For debug comparison only
+        let positionSource = 'transport';
 
         try {
             const audioEngine = AudioEngineGlobal.get();
-            const currentAudioTime = this.state.audioContext?.currentTime;
-            const recordStartAudioTime = this.state.recordStartAudioTime;
-            const recordStartStep = this.state.recordStartStep || 0;
-            const bpm = this.state.recordingBPM || 120;
+            // Try to get step from NativeTransportSystem directly (most accurate/up-to-date)
+            if (audioEngine?.transport) {
+                // transport.currentTick is the raw tick position
+                // transport.getCurrentStep() returns sub-step precision (float)
+                const step = audioEngine.transport.getCurrentStep();
 
-            // Get transport position for debug comparison
-            if (audioEngine?.playbackManager) {
-                transportStep = audioEngine.playbackManager.getCurrentPosition();
-            }
-
-            if (currentAudioTime && recordStartAudioTime) {
-                // ✅ RELIABLE CALCULATION: Elapsed time from AudioContext
-                // AudioContext.currentTime is monotonic and consistent
-                const elapsedSeconds = currentAudioTime - recordStartAudioTime;
-                const elapsedBeats = (elapsedSeconds * bpm) / 60;
-                const elapsedSteps = elapsedBeats * STEPS_PER_BEAT;
-
-                currentStep = recordStartStep + elapsedSteps;
-                positionSource = 'audioContext';
-            } else {
-                // Fallback: Use transport if AudioContext unavailable
-                if (transportStep !== null && !isNaN(transportStep)) {
-                    currentStep = transportStep;
-                    positionSource = 'transport.fallback';
-                } else {
-                    // Ultimate fallback: Use performance.now()
-                    const elapsedMs = performance.now() - this.state.recordStartTime;
-                    const elapsedSeconds = elapsedMs / 1000;
-                    const elapsedBeats = (elapsedSeconds * bpm) / 60;
-                    currentStep = recordStartStep + (elapsedBeats * STEPS_PER_BEAT);
-                    positionSource = 'performance.fallback';
+                if (step !== null && !isNaN(step)) {
+                    currentStep = step;
+                    positionSource = 'transport.native';
                 }
             }
+
+            // Fallback chain (should rarely be needed if transport is initialized)
+            if (currentStep === undefined) {
+                if (audioEngine?.playbackManager) {
+                    currentStep = audioEngine.playbackManager.getCurrentPosition();
+                    positionSource = 'playbackManager';
+                } else {
+                    currentStep = this.playbackStore.currentStep || 0;
+                    positionSource = 'store';
+                }
+            }
+
         } catch (e) {
-            // Error fallback
-            const bpm = this.state.recordingBPM || 120;
-            const elapsedMs = performance.now() - this.state.recordStartTime;
-            const elapsedSeconds = elapsedMs / 1000;
-            const elapsedBeats = (elapsedSeconds * bpm) / 60;
-            currentStep = (this.state.recordStartStep || 0) + (elapsedBeats * STEPS_PER_BEAT);
+            MIDILog.warn('Could not get Transport position', e);
+            currentStep = this.playbackStore.currentStep || 0;
             positionSource = 'error.fallback';
         }
 
@@ -577,16 +593,13 @@ export class MIDIRecorder {
         // Apply quantization
         const quantizedStep = this.quantizeStep(currentStep, this.state.quantizeStrength);
 
-        // Log sync check (compare AudioContext-based position with transport for verification)
+        // Log sync check (simplified - no parallel clock to compare against)
         MIDILog.sync({
             calculated: currentStep,
-            actual: transportStep,
-            diff: transportStep !== null ? Math.abs(currentStep - transportStep) : null,
-            rawDiff: null,
+            actual: currentStep, // They are now the same
+            diff: 0,
             source: positionSource,
-            bpm: this.state.recordingBPM,
-            wrapped: 0,
-            patternLen: 0
+            bpm: this.state.recordingBPM
         });
 
         if (type === 'noteOn' && velocity > 0) {
@@ -614,14 +627,6 @@ export class MIDIRecorder {
         const actualAudioTime = this.state.audioContext?.currentTime || timestamp;
 
         // Get actual playhead for comparison
-        let actualPlayhead = null;
-        try {
-            const audioEngine = AudioEngineGlobal.get();
-            if (audioEngine?.playbackManager) {
-                actualPlayhead = audioEngine.playbackManager.currentPosition;
-            }
-        } catch (e) { }
-
         // Store in pending notes (waiting for Note Off)
         // CRITICAL: startTime must be in STEPS (piano roll coordinate system)
         this.state.pendingNotes.set(pitch, {
@@ -632,7 +637,7 @@ export class MIDIRecorder {
             startTimeSteps: step,
             startTimestamp: timestamp,
             startKeyboardTime: actualAudioTime,
-            startActualPlayhead: actualPlayhead
+            startActualPlayhead: step // Use the trusted step from transport
         });
 
         // Log note on event
@@ -802,19 +807,15 @@ export class MIDIRecorder {
             return;
         }
 
-        // Calculate current position using AudioContext timing
+        // Calculate current position using Transport source of truth
         let currentStep = 0;
         try {
-            const currentAudioTime = this.state.audioContext?.currentTime;
-            const recordStartAudioTime = this.state.recordStartAudioTime;
-            const recordStartStep = this.state.recordStartStep || 0;
-            const bpm = this.state.recordingBPM || 120;
-
-            if (currentAudioTime && recordStartAudioTime) {
-                const elapsedSeconds = currentAudioTime - recordStartAudioTime;
-                const elapsedBeats = (elapsedSeconds * bpm) / 60;
-                const elapsedSteps = elapsedBeats * STEPS_PER_BEAT;
-                currentStep = recordStartStep + elapsedSteps;
+            const audioEngine = AudioEngineGlobal.get();
+            if (audioEngine?.transport) {
+                const step = audioEngine.transport.getCurrentStep();
+                if (step !== null && !isNaN(step)) {
+                    currentStep = step;
+                }
             }
         } catch (e) {
             return; // Skip this update if we can't get position
@@ -885,29 +886,41 @@ export class MIDIRecorder {
             return;
         }
 
-        // Calculate duration from actual key press time (AudioContext)
-        const currentAudioTime = this.state.audioContext?.currentTime || timestamp;
+        // Calculate duration strictly from Transport steps
+        // This ensures the note length matches exactly what the playhead covered
+        const endTimeSteps = step;
+        const startTimeSteps = pendingNote.startTimeSteps;
+        let finalDurationSteps = endTimeSteps - startTimeSteps;
 
-        let actualDurationSteps = null;
-
-        if (pendingNote.startKeyboardTime !== undefined && currentAudioTime !== undefined) {
-            const durationSeconds = currentAudioTime - pendingNote.startKeyboardTime;
-            // ✅ FIX: Use BPM captured at recording start (consistent)
-            const bpm = this.state.recordingBPM || 120;
-            const durationBeats = (durationSeconds * bpm / 60);
-            actualDurationSteps = durationBeats * STEPS_PER_BEAT;
-
-            // Minimum duration: 1 step (1/16 note)
-            actualDurationSteps = Math.max(1, actualDurationSteps);
+        // Handle loop wrap-around
+        if (finalDurationSteps <= 0) {
+            // If we wrapped, the end time is "before" the start time in absolute numbers
+            // We need to add the loop length to compensate
+            try {
+                const audioEngine = AudioEngineGlobal.get();
+                if (audioEngine?.transport?.loopState) {
+                    const loopLength = audioEngine.transport.loopState.lengthSteps;
+                    if (loopLength > 0) {
+                        finalDurationSteps += loopLength;
+                        // Handle multiple loops (very long note)
+                        while (finalDurationSteps <= 0) {
+                            finalDurationSteps += loopLength;
+                        }
+                    }
+                } else if (this.loopRegion) {
+                    // Fallback to stored loop region
+                    const loopLength = this.loopRegion.end - this.loopRegion.start;
+                    finalDurationSteps += loopLength;
+                }
+            } catch (e) {
+                // If loop info unavailable, force minimum length
+                finalDurationSteps = 1;
+            }
         }
 
-        // Fallback: Calculate step-based length
-        const endTimeSteps = step;
-        const lengthSteps = Math.max(1, endTimeSteps - pendingNote.startTimeSteps);
+        // Minimum duration safety
+        finalDurationSteps = Math.max(0.25, finalDurationSteps); // minimum 1/64th note
 
-        // Use actual duration if available, otherwise fallback to step-based
-        // CRITICAL: Piano roll expects length in STEPS (not beats!)
-        const finalDurationSteps = actualDurationSteps !== null ? actualDurationSteps : lengthSteps;
 
         // Create complete note - match PianoRollAddNoteCommand format
         const pitchToString = (midiPitch) => {

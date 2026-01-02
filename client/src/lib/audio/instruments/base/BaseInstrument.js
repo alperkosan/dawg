@@ -116,7 +116,7 @@ export class BaseInstrument {
             paramsWithDuration.duration = duration;
         }
 
-        // 🐛 DEBUG: Always log for timeline preview debugging
+        /* 🐛 DEBUG: Always log for timeline preview debugging
         console.log(`🎵 ${this.name}.triggerNote:`, {
             pitch,
             midiNote,
@@ -133,6 +133,7 @@ export class BaseInstrument {
             hasOutput: !!this.output,
             outputType: this.output?.constructor?.name || 'none'
         });
+        */
 
         // ✅ FIX: Pass duration via extendedParams to noteOn
         this.noteOn(midiNote, midiVelocity, startTime, Object.keys(paramsWithDuration).length > 0 ? paramsWithDuration : null);

@@ -145,10 +145,56 @@ export const useMidiRecording = ({
         };
     }, [loopRegion, currentInstrument?.id]); // Re-init on loop region or instrument change
 
+    // Helper to toggle recording - handles all the state management
+    const toggleRecording = useCallback(async () => {
+        const recorder = recorderRef.current;
+        if (!recorder) {
+            console.warn('⚠️ MIDIRecorder not initialized');
+            return;
+        }
+
+        if (isRecording) {
+            // Stop recording
+            await recorder.stopRecording();
+            setIsRecording(false);
+            setIsCountingIn(false);
+        } else {
+            // Start recording
+
+            // Delegate completely to MIDIRecorder to handle loop logic
+            // This prevents race conditions between Hook and Class
+            if (!loopRegion) {
+                console.log('⏺️ Recording started without loop selection (Linear Mode)');
+            } else {
+                console.log('⏺️ Recording started with loop selection (Loop Mode)');
+            }
+
+            const bars = recorder.state?.countInBars || 1;
+            setCountInBars(bars);
+
+            const success = recorder.startRecording({
+                mode: 'replace',
+                quantizeStrength: 0,
+                countInBars: bars
+            });
+
+            if (success) {
+                setIsCountingIn(bars > 0);
+                if (bars === 0) {
+                    setIsRecording(true);
+                }
+            }
+        }
+    }, [isRecording, loopRegion]);
+
     return {
         isRecording,
         isCountingIn,
         countInBars,
-        recorder: recorderRef.current
+        recorder: recorderRef.current,
+        toggleRecording,
+        setIsRecording,
+        setIsCountingIn,
+        setCountInBars
     };
 };

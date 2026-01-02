@@ -81,7 +81,7 @@ export class WasmSingleSampleInstrument extends BaseInstrument {
             this.wasmNode.releaseNote(null, when, true);
         }
 
-        console.log(`🥁 WasmSingleSample: triggerNote ${this.name}, note=${midiNote}, vel=${velocity}, dur=${duration?.toFixed(3)}s, time=${when.toFixed(3)}`);
+        //console.log(`🥁 WasmSingleSample: triggerNote ${this.name}, note=${midiNote}, vel=${velocity}, dur=${duration?.toFixed(3)}s, time=${when.toFixed(3)}`);
         this.wasmNode.triggerNote(midiNote, velocity, when, duration);
 
         this.activeNotes.set(midiNote, { startTime: when, velocity });

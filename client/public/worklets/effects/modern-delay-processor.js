@@ -56,11 +56,14 @@ class ModernDelayProcessor extends AudioWorkletProcessor {
     this.flutterPhase = 0;
     this.flutterTarget = 0;
     this.flutterCurrent = 0;
-    
+
     // ✅ NEW: Delay model state
     this.delayModel = 0; // 0=Digital, 1=Tape, 2=Analog, 3=BBD
     this.tapePhase = 0; // For tape wow/flutter
     this.bbdNoise = 0; // For BBD noise simulation
+
+    // 🎯 DLY-P1: Xorshift32 PRNG state (faster than Math.random)
+    this.xorshiftState = 0x12345678 + (Date.now() & 0xFFFF);
 
     // Diffusion (allpass filters)
     const allpassSizes = [
@@ -113,13 +116,13 @@ class ModernDelayProcessor extends AudioWorkletProcessor {
     const diffusion = this.getParam(parameters.diffusion, 0) ?? this.settings.diffusion ?? 0;
     const wobble = this.getParam(parameters.wobble, 0) ?? this.settings.wobble ?? 0;
     const flutter = this.getParam(parameters.flutter, 0) ?? this.settings.flutter ?? 0;
-    
+
     // ✅ NEW: Delay model and tempo sync parameters
     const delayModel = Math.floor(this.getParam(parameters.delayModel, 0) ?? this.settings.delayModel ?? 0);
     const tempoSync = this.getParam(parameters.tempoSync, 0) ?? this.settings.tempoSync ?? 0;
     const noteDivision = Math.floor(this.getParam(parameters.noteDivision, 0) ?? this.settings.noteDivision ?? 3);
     const bpm = this.getParam(parameters.bpm, 0) ?? this.settings.bpm ?? 120;
-    
+
     this.delayModel = delayModel;
 
     if (this.bypassed) {
@@ -133,7 +136,7 @@ class ModernDelayProcessor extends AudioWorkletProcessor {
     // ✅ NEW: Calculate delay time from tempo sync if enabled
     let effectiveTimeLeft = timeLeft;
     let effectiveTimeRight = timeRight;
-    
+
     if (tempoSync > 0.5) {
       // Tempo sync mode: calculate delay time from BPM and note division
       const beatDuration = 60 / bpm; // One quarter note in seconds
@@ -149,7 +152,7 @@ class ModernDelayProcessor extends AudioWorkletProcessor {
         beatDuration / 3,    // 1/8t (triplet)
         beatDuration * 2 / 3 // 1/4t (triplet)
       ];
-      
+
       const syncTime = noteDivisions[noteDivision] || beatDuration;
       effectiveTimeLeft = syncTime;
       effectiveTimeRight = syncTime;
@@ -189,9 +192,9 @@ class ModernDelayProcessor extends AudioWorkletProcessor {
       if (this.lfoPhase > 2 * Math.PI) this.lfoPhase -= 2 * Math.PI;
       const wobbleMod = Math.sin(this.lfoPhase) * lfoDepth;
 
-      // 2. Flutter (Smoothed Random Walk)
-      if (Math.random() < flutterSpeed) {
-        this.flutterTarget = (Math.random() * 2 - 1) * flutter;
+      // 2. Flutter (Smoothed Random Walk) - using xorshift for performance
+      if (this.xorshift() < flutterSpeed) {
+        this.flutterTarget = (this.xorshift() * 2 - 1) * flutter;
       }
       // Smooth approach to target
       this.flutterCurrent += (this.flutterTarget - this.flutterCurrent) * 0.01;
@@ -246,7 +249,7 @@ class ModernDelayProcessor extends AudioWorkletProcessor {
       // ✅ NEW: Apply delay model characteristics
       let modelProcessedLeft = delayedLeft;
       let modelProcessedRight = delayedRight;
-      
+
       switch (delayModel) {
         case 1: // Tape
           // Tape characteristics: wow/flutter, saturation, high-frequency rolloff
@@ -276,7 +279,7 @@ class ModernDelayProcessor extends AudioWorkletProcessor {
           break;
         case 3: // BBD (Bucket Brigade Delay)
           // BBD characteristics: noise, slight filtering, non-linear response
-          this.bbdNoise = (Math.random() * 2 - 1) * 0.0001; // Small noise
+          this.bbdNoise = (this.xorshift() * 2 - 1) * 0.0001; // Small noise
           modelProcessedLeft = delayedLeft + this.bbdNoise;
           modelProcessedRight = delayedRight + this.bbdNoise;
           // BBD has limited bandwidth
@@ -368,6 +371,17 @@ class ModernDelayProcessor extends AudioWorkletProcessor {
   getParam(param, index) {
     if (!param) return undefined;
     return param.length > 1 ? param[index] : param[0];
+  }
+
+  // 🎯 DLY-P1: Xorshift32 PRNG (faster than Math.random)
+  // Returns value in [0, 1) range
+  xorshift() {
+    let x = this.xorshiftState;
+    x ^= x << 13;
+    x ^= x >>> 17;
+    x ^= x << 5;
+    this.xorshiftState = x >>> 0; // Ensure unsigned
+    return (this.xorshiftState & 0x7FFFFFFF) / 0x80000000;
   }
 }
 

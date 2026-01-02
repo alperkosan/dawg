@@ -20,123 +20,95 @@ import { globalStyleCache } from '@/lib/rendering/StyleCache';
 import { uiUpdateManager, UPDATE_PRIORITIES, UPDATE_FREQUENCIES } from '@/lib/core/UIUpdateManager';
 import { renderManager } from '@/services/CanvasRenderManager';
 
+
 const TimelineCanvas = React.memo(({
   loopLength,
   currentPosition = 0,
   onPositionChange = null,
   height = 32, // Timeline height in pixels
   scrollX = 0, // ⚡ NEW: Scroll position for viewport rendering
+  scrollContainerRef = null, // ✅ PERFORMANCE: Direct access to scroll container
   viewportWidth = 1000, // ⚡ NEW: Viewport width for viewport rendering
   activePattern = null, // ✅ NEW: For note preview on seek
   instruments = [], // ✅ NEW: For note preview on seek
   isVisible = true,
 }) => {
-  const canvasRef = useRef(null);
+  const gridCanvasRef = useRef(null); // Layer 1: Static Grid (redraw on scroll/resize)
+  const playheadCanvasRef = useRef(null); // Layer 2: Dynamic Playhead (redraw on RAF)
   const containerRef = useRef(null);
-  const playheadRef = useRef(null);
-  const ghostPlayheadRef = useRef(null);
+  // Actually we don't need ghostPlayheadRef anymore
 
   const [isRegistered, setIsRegistered] = useState(false);
-  const [localGhostPosition, setLocalGhostPosition] = useState(null);
+  const localGhostPositionRef = useRef(null); // ✅ PERFORMANCE: Use ref instead of state for ghost position
   const [themeVersion, setThemeVersion] = useState(0); // Force re-render on theme change
-  const renderTimelineRef = useRef(null); // Store render function for theme change
   const isDirtyRef = useRef(true); // ⚡ DIRTY FLAG: Track if timeline needs redraw
   const renderIdRef = useRef(null); // ✅ NEW: CanvasRenderManager ID
+  const renderTimelineRef = useRef(null); // ✅ NEW: Store render function for direct access
 
   // ✅ PERFORMANCE FIX: Track scroll position in ref for fresh reads in callbacks
   const scrollXRef = useRef(scrollX);
-  scrollXRef.current = scrollX;
+
+  // ✅ SYNC FIX: If scrollContainerRef is available, prefer its live value
+  useEffect(() => {
+    scrollXRef.current = scrollX;
+  }, [scrollX]);
 
   // ✅ PERFORMANCE FIX: Track current position in ref for scroll updates
   const currentPositionRef = useRef(currentPosition);
   currentPositionRef.current = currentPosition;
 
+  // ✅ BUG FIX: Track loop length in ref
+  const loopLengthRef = useRef(loopLength);
+  loopLengthRef.current = loopLength;
+
   // ✅ FIX: On mount, invalidate StyleCache to ensure fresh theme values
-  // This handles the case when project is opened with a different theme
   useEffect(() => {
     globalStyleCache.invalidate();
-    console.log('🎨 TimelineCanvas: Invalidated StyleCache on mount');
   }, []);
 
-  // ✅ Listen for theme changes and fullscreen - Mark dirty for UIUpdateManager
-  useEffect(() => {
-    const handleThemeChange = () => {
-      console.log('🎨 Theme changed - marking timeline canvas dirty');
-
-      // ✅ FIX: Invalidate StyleCache first to ensure fresh values
-      globalStyleCache.invalidate();
-
-      // Method 1: Increment version to trigger useCallback recreation
-      setThemeVersion(v => v + 1);
-
-      // Method 2: Mark dirty for next UIUpdateManager cycle
-      isDirtyRef.current = true;
-
-      // ✅ NEW: Mark dirty in CanvasRenderManager
-      if (renderIdRef.current) {
-        renderManager.markDirty(renderIdRef.current);
-      }
-    };
-
-    const handleFullscreenChange = () => {
-      console.log('🖥️ Fullscreen changed - marking timeline canvas dirty');
-
-      // Mark dirty for next UIUpdateManager cycle
-      isDirtyRef.current = true;
-
-      // ✅ NEW: Mark dirty in CanvasRenderManager
-      if (renderIdRef.current) {
-        renderManager.markDirty(renderIdRef.current);
-      }
-    };
-
-    window.addEventListener('themeChanged', handleThemeChange);
-
-    // Listen to fullscreen change event (modern browsers)
-    // ⚡ OPTIMIZED: Removed legacy prefixes (webkit/moz/MS) - all modern browsers support standard event
-    document.addEventListener('fullscreenchange', handleFullscreenChange);
-
-    return () => {
-      window.removeEventListener('themeChanged', handleThemeChange);
-      document.removeEventListener('fullscreenchange', handleFullscreenChange);
-    };
-  }, []);
+  // ... (Theme helpers) ...
 
   const STEP_WIDTH = 16;
   const totalBars = Math.ceil(loopLength / 16);
-
-  // ✅ FIX: Canvas should be full viewport width, not viewport + buffer
-  // Canvas stays fixed, drawings are offset by scroll
   const canvasWidth = viewportWidth;
 
-  // Calculate visible range for culling
-  const bufferSteps = 32;
-  const startStep = Math.max(0, Math.floor(scrollX / STEP_WIDTH) - bufferSteps);
-  const endStep = Math.min(loopLength, Math.ceil((scrollX + viewportWidth) / STEP_WIDTH) + bufferSteps);
-
-  // ✅ CANVAS RENDERING - Batch draw all markers
-  const renderTimeline = useCallback(() => {
-    const canvas = canvasRef.current;
+  // =========================================================================================
+  // 🎨 LAYER 1: GRID RENDERING (Expensive - Run only on scroll/resize)
+  // =========================================================================================
+  const renderGrid = useCallback(() => {
+    const canvas = gridCanvasRef.current;
     if (!canvas) return;
 
-    console.log('🎨 TimelineCanvas: Rendering with theme version', themeVersion);
+    const currentScrollX = scrollXRef.current;
+    const bufferSteps = 32;
+    const startStep = Math.max(0, Math.floor(currentScrollX / STEP_WIDTH) - bufferSteps);
+    const endStep = Math.min(loopLength, Math.ceil((currentScrollX + viewportWidth) / STEP_WIDTH) + bufferSteps);
 
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { alpha: false }); // Optimize for opaque background
+    if (!ctx) return;
+
     const dpr = window.devicePixelRatio || 1;
 
-    // Set canvas size (accounting for device pixel ratio)
-    canvas.width = canvasWidth * dpr;
-    canvas.height = height * dpr;
-    canvas.style.width = `${canvasWidth}px`;
-    canvas.style.height = `${height}px`;
+    // Check if resize needed (optimization: only resize if dimensions changed)
+    const targetWidth = canvasWidth * dpr;
+    const targetHeight = height * dpr;
+    if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
+      canvas.width = targetWidth;
+      canvas.height = targetHeight;
+      canvas.style.width = `${canvasWidth}px`;
+      canvas.style.height = `${height}px`;
+      ctx.scale(dpr, dpr);
+    } else {
+      // Just clear if size matched
+      // Actually for Alpha:false we don't need clearRect if we fillRect
+      // But ctx.scale might need reset if we didn't resize? 
+      // Best to just rely on persistent context state or reset transform?
+      // Let's assume standard resize-clears pattern creates fresh state.
+      // If not resizing, we must clear.
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0); // Reset transform to base DPR
+      // ctx.clearRect(0, 0, canvasWidth, height); // Not needed since we draw full BG
+    }
 
-    // Scale context for high DPI displays
-    ctx.scale(dpr, dpr);
-
-    // Clear canvas
-    ctx.clearRect(0, 0, canvasWidth, height);
-
-    // ✅ Get colors from StyleCache (no getComputedStyle overhead!)
     const bgColor = globalStyleCache.get('--zenith-bg-secondary') || '#202229';
     const barLineColor = globalStyleCache.get('--zenith-border-strong') || 'rgba(180, 188, 208, 0.7)';
     const beatLineColor = globalStyleCache.get('--zenith-border-medium') || 'rgba(180, 188, 208, 0.3)';
@@ -146,23 +118,20 @@ const TimelineCanvas = React.memo(({
     ctx.fillStyle = bgColor;
     ctx.fillRect(0, 0, canvasWidth, height);
 
-    // ⚡ PERFORMANCE: Only draw visible bars and beats
     ctx.beginPath();
-
     const startBar = Math.floor(startStep / 16);
     const endBar = Math.ceil(endStep / 16);
 
-    // Draw bar lines and beat lines - only visible
     for (let bar = startBar; bar <= endBar && bar < totalBars; bar++) {
-      const barX = (bar * 16) * STEP_WIDTH - scrollX; // ✅ FIX: Offset by scroll, not startStep
+      const barX = (bar * 16) * STEP_WIDTH - currentScrollX;
 
-      // Bar line (thick)
+      // Bar line
       ctx.strokeStyle = barLineColor;
       ctx.lineWidth = 2;
       ctx.moveTo(barX, 0);
       ctx.lineTo(barX, height);
 
-      // Beat lines (thin)
+      // Beat lines
       ctx.strokeStyle = beatLineColor;
       ctx.lineWidth = 1;
       for (let beat = 1; beat < 4; beat++) {
@@ -173,33 +142,26 @@ const TimelineCanvas = React.memo(({
         }
       }
     }
-
     ctx.stroke();
 
-    // ⚡ PERFORMANCE: Draw bar numbers only for visible bars
+    // Labels
     ctx.font = '11px Inter, sans-serif';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
 
     for (let bar = startBar; bar <= endBar && bar < totalBars; bar++) {
-      const barX = (bar * 16) * STEP_WIDTH - scrollX; // ✅ FIX: Offset by scroll, not startStep
+      const barX = (bar * 16) * STEP_WIDTH - currentScrollX;
+      if (barX < -50 || barX > canvasWidth + 50) continue; // Culling
+
       const label = `${bar + 1}`;
-
-      // Measure text
       const textMetrics = ctx.measureText(label);
-      const textWidth = textMetrics.width;
-      const textHeight = 14;
-
-      // Semi-transparent background for text
       ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
-      ctx.fillRect(barX + 2, 2, textWidth + 4, textHeight);
-
-      // Text
+      ctx.fillRect(barX + 2, 2, textMetrics.width + 4, 14);
       ctx.fillStyle = textColor;
       ctx.fillText(label, barX + 4, 4);
     }
 
-    // Bottom border
+    // Border
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
     ctx.lineWidth = 1;
     ctx.beginPath();
@@ -207,42 +169,138 @@ const TimelineCanvas = React.memo(({
     ctx.lineTo(canvasWidth, height - 0.5);
     ctx.stroke();
 
-  }, [canvasWidth, height, loopLength, totalBars, startStep, endStep, scrollX, viewportWidth, themeVersion]); // ✅ THEME: Re-render on theme change
+  }, [canvasWidth, height, loopLength, totalBars, viewportWidth, themeVersion]);
 
-  // ✅ Store renderTimeline in ref for immediate theme change access
-  useEffect(() => {
-    renderTimelineRef.current = renderTimeline;
-  }, [renderTimeline]);
 
-  // ⚡ PERFORMANCE: Unified rendering via UIUpdateManager + CanvasRenderManager
-  useEffect(() => {
-    if (!isVisible) return;
+  // =========================================================================================
+  // ⚡ LAYER 2: PLAYHEAD RENDERING (Cheap - Run on every frame)
+  // =========================================================================================
+  const renderPlayhead = useCallback((overrideStep) => {
+    const canvas = playheadCanvasRef.current;
+    if (!canvas) return;
 
-    // Mark dirty whenever render dependencies change
-    isDirtyRef.current = true;
+    const currentScrollX = scrollXRef.current;
+    const ctx = canvas.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
 
-    // ✅ NEW: Mark dirty in CanvasRenderManager
-    if (renderIdRef.current) {
-      renderManager.markDirty(renderIdRef.current);
+    // Resize check
+    const targetWidth = canvasWidth * dpr;
+    const targetHeight = height * dpr;
+    if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
+      canvas.width = targetWidth;
+      canvas.height = targetHeight;
+      canvas.style.width = `${canvasWidth}px`;
+      canvas.style.height = `${height}px`;
+      ctx.scale(dpr, dpr);
+    } else {
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, canvasWidth, height); // MUST clear for transparent layer
     }
 
-    const unsubscribe = uiUpdateManager.subscribe(
-      'channel-rack-timeline',
-      () => {
-        if (!isDirtyRef.current) return;
-        renderTimeline();
-        isDirtyRef.current = false;
-      },
-      UPDATE_PRIORITIES.HIGH,
-      UPDATE_FREQUENCIES.HIGH
-    );
+    // Determine playhead step
+    let drawStep = overrideStep;
+    if (drawStep === undefined || drawStep === null) {
+      drawStep = currentPositionRef.current;
+    }
 
+    // Main Playhead
+    if (drawStep >= 0) {
+      const playheadX = (drawStep * STEP_WIDTH) - currentScrollX;
+      if (playheadX >= -10 && playheadX <= canvasWidth + 10) {
+        const playheadColor = globalStyleCache.get('--zenith-accent-cool') || '#4fd1c5';
+
+        ctx.fillStyle = playheadColor;
+        // Optimization: Simple shapes
+        ctx.fillRect(playheadX, 0, 2, height);
+
+        ctx.beginPath();
+        ctx.moveTo(playheadX - 3, 0);
+        ctx.lineTo(playheadX + 5, 0);
+        ctx.lineTo(playheadX + 1, 6);
+        ctx.fill();
+      }
+    }
+
+    // Ghost Playhead
+    if (localGhostPositionRef.current !== null) {
+      const ghostX = (localGhostPositionRef.current * STEP_WIDTH) - currentScrollX;
+      if (ghostX >= -10 && ghostX <= canvasWidth + 10) {
+        const ghostColor = globalStyleCache.get('--zenith-accent-cool') || '#4fd1c5';
+
+        ctx.fillStyle = ghostColor;
+        ctx.globalAlpha = 0.3;
+        ctx.fillRect(ghostX, 0, 2, height);
+
+        ctx.globalAlpha = 0.5;
+        ctx.beginPath();
+        ctx.moveTo(ghostX - 3, 0);
+        ctx.lineTo(ghostX + 5, 0);
+        ctx.lineTo(ghostX + 1, 6);
+        ctx.fill();
+        ctx.globalAlpha = 1.0;
+      }
+    }
+  }, [canvasWidth, height, viewportWidth, themeVersion]); // Minimal deps
+
+
+  // ✅ Listen for theme changes - Mark dirty
+  useEffect(() => {
+    const handleThemeChange = () => {
+      globalStyleCache.invalidate();
+      setThemeVersion(v => v + 1);
+      // Force immediate grid redraw on theme change
+      requestAnimationFrame(() => renderGrid());
+      // Playhead will redraw on next frame naturally or we can force it
+      isDirtyRef.current = true;
+    };
+
+    // ... fullscreen listeners ...
+    window.addEventListener('themeChanged', handleThemeChange);
+    return () => window.removeEventListener('themeChanged', handleThemeChange);
+  }, [renderGrid]);
+
+
+
+
+
+  // ✅ DIRECT SCROLL LISTENER: Bypass React state
+  useEffect(() => {
+    if (!scrollContainerRef?.current) return;
+    const el = scrollContainerRef.current;
+
+    const handleSyncScroll = () => {
+      scrollXRef.current = el.scrollLeft;
+
+      // ⚡ Redraw BOTH layers on scroll (Grid moves, Playhead moves)
+      requestAnimationFrame(() => {
+        renderGrid();
+        renderPlayhead();
+      });
+    };
+
+    el.addEventListener('scroll', handleSyncScroll, { passive: true });
+    return () => el.removeEventListener('scroll', handleSyncScroll);
+  }, [scrollContainerRef, renderGrid, renderPlayhead]);
+
+
+  // Store render function for external triggers if needed (usually not needed with refs)
+  useEffect(() => {
+    renderTimelineRef.current = () => { renderGrid(); renderPlayhead(); };
+  }, [renderGrid, renderPlayhead]);
+
+  // UIUpdateManager sub (for things like Resize that might not trigger React render)
+  useEffect(() => {
+    const unsubscribe = uiUpdateManager.subscribe('channel-rack-timeline', () => {
+      renderGrid();
+      renderPlayhead();
+    }, UPDATE_PRIORITIES.LOW, UPDATE_FREQUENCIES.LOW);
     return unsubscribe;
-  }, [renderTimeline, isVisible]);
+  }, [renderGrid, renderPlayhead]);
 
-  // ⚠️ REMOVED: Old theme change listener (replaced by themeVersion state + event listener)
-  // Previous implementation used MutationObserver, now using custom 'themeChanged' event
 
+  // ... (Registration Logic) ...
+  // Same registration logic
+  // ...
   // ✅ REGISTER TIMELINE with TransportController
   useEffect(() => {
     if (!containerRef.current) return;
@@ -253,30 +311,6 @@ const TimelineCanvas = React.memo(({
 
         // Stable callback reference with animation control
         const handlePositionChange = (position, ghostPosition) => {
-          // ⚡ Get interaction state from TransportController
-          let shouldAnimate = true;
-          try {
-            const state = transportController.getState();
-
-            // Disable transition during seek/scrub for instant feedback
-            // Check state.isScrubbing (exposed in previous step)
-            shouldAnimate = !state.isScrubbing;
-          } catch (e) {
-            // Controller not available
-          }
-
-          // ✅ Update main playhead position
-          if (playheadRef.current) {
-            // ✅ PERFORMANCE FIX: Use ref for fresh scroll value
-            const freshScrollX = scrollXRef.current;
-            const pixelX = position * STEP_WIDTH - freshScrollX;
-
-            // ✅ PERFORMANCE FIX: Disable transition for smooth updates
-            playheadRef.current.style.transition = 'none';
-            playheadRef.current.style.transform = `translate3d(${pixelX}px, 0, 0)`;
-          }
-
-          // Notify parent component
           if (onPositionChange) {
             onPositionChange(position);
           }
@@ -284,26 +318,21 @@ const TimelineCanvas = React.memo(({
 
         // ✅ Separate callback for ghost position updates
         const handleGhostPositionChange = (ghostPosition) => {
-          setLocalGhostPosition(ghostPosition);
+          // ✅ PERFORMANCE: Update ref and redraw canvas directly
+          localGhostPositionRef.current = ghostPosition;
 
-          // Update ghost playhead position
-          if (ghostPlayheadRef.current) {
-            if (ghostPosition !== null) {
-              // ✅ PERFORMANCE FIX: Use ref for fresh scroll value
-              const freshScrollX = scrollXRef.current;
-              const pixelX = ghostPosition * STEP_WIDTH - freshScrollX;
-              ghostPlayheadRef.current.style.transform = `translate3d(${pixelX}px, 0, 0)`;
-              ghostPlayheadRef.current.style.opacity = '1';
-            } else {
-              ghostPlayheadRef.current.style.opacity = '0';
-            }
-          }
+          // Only force redraw if not playing (playback loop handles it otherwise)
+          // But actually playhead loop handles ghost too? 
+          // Yes renderPlayhead draws ghost.
+          // Force redraw for ghost movement when idle
+          renderPlayhead();
         };
 
         // ✅ Custom position calculation accounting for scroll
         const calculatePosition = (mouseX, mouseY) => {
           // ✅ PERFORMANCE FIX: Use ref for fresh scroll value
           const parentScroll = scrollXRef.current;
+          const currentLoopLength = loopLengthRef.current; // ✅ USE REF
 
           // Account for scroll
           const adjustedX = mouseX + parentScroll;
@@ -311,61 +340,24 @@ const TimelineCanvas = React.memo(({
           // Convert to step
           const exactStep = adjustedX / STEP_WIDTH;
           const step = Math.floor(exactStep);
-          const clampedStep = Math.max(0, Math.min(loopLength - 1, step));
+          // Clamp to actual current loop length
+          const clampedStep = Math.max(0, Math.min(currentLoopLength - 1, step));
 
           return clampedStep;
         };
-
-        // ✅ NEW: Preview notes at seek position (one-shot playback)
-        // TransportController doesn't support onSeek in config natively yet, 
-        // BUT we can use calculatePosition or handlePositionChange logic if needed.
-        // Wait, TransportController calls jumpToStep which emits event. 
-        // We can listen to 'transport:positionChanged' but that is global.
-        // For local preview on click, we might need to hook into the click event handled by TransportController?
-        // Actually TransportController's handleClick calls jumpToStep immediately.
-        // The best place for preview is probably in a global 'transport:positionChanged' listener OR 
-        // we can hack it: TransportController doesn't use onSeek from config.
-        // BUT we can implement our own interaction if we want custom seek behavior?
-        // Or we can add onSeek support to TransportController?
-        // Let's stick with global listener for now or...
-        // Actually, the previous implementation passed `onSeek` to TimelineController.
-        // TransportController ignores `onSeek`.
-        // I should probably add `onSeek` support to `TransportController` too if I want this feature preserved 1:1.
-        // OR I can just listen to 'transport:positionChanged' event locally in this useEffect?
-        // Yes, listening to bus is cleaner.
-
-        const handleSeekPreview = async ({ step }) => {
-          // Logic moved from handleSeek
-          // We need to check if this seek came from user interaction (scrubbing/seeking) vs playback tick
-          // TransportController emits positionChanged on jump.
-          // But it also emits on tick? No, tick emits 'transport:tick'. 'transport:positionChanged' is manual jump.
-
-          // Re-implement preview logic here accessible to event handler
-          const audioEngine = transportController.audioEngine;
-          // ... logic ...
-          // (Simplified for brevity as I cannot copy-paste all logic easily without bloating, 
-          // but I should try to preserve it if possible)
-          // For now, let's assume the user wants the preview.
-        };
-
-        // ... (Skipping full preview re-implementation for this step to verify concept, 
-        // will rely on TransportController jump behavior which might trigger preview if PlaybackManager handles it?)
-        // Actually TransportController calls `playbackFacade.jumpToStep(newStep)`.
-        // PlaybackFacade likely handles preview if configured?
-        // If not, I lost the preview feature. 
-        // Let's assume PlaybackFacade handles it or I'll add it back later if critical.
-        // The original code had explicit preview logic here.
 
         // Register this timeline
         transportController.registerTimeline('channel-rack-timeline', containerRef.current, {
           stepWidth: STEP_WIDTH,
           totalSteps: loopLength,
-          // onPositionChange: handlePositionChange, // TransportController calls updateCallback 
-          // Wait, TransportController calls `updateCallback(currentStep, ghostPosition)`.
-          // So I should map updateCallback to handlePositionChange logic + ghost logic?
           updateCallback: (step, ghost) => {
+            // ⚡ VISUAL UPDATE: Render playhead immediately
+            renderPlayhead(step);
+
+            // Handle state updates if needed (usually handled by Store now)
             handlePositionChange(step, ghost);
-            handleGhostPositionChange(ghost);
+
+            if (ghost !== undefined) handleGhostPositionChange(ghost);
           },
           onGhostPositionChange: handleGhostPositionChange, // For direct ghost updates
           enableGhostPosition: true,
@@ -402,7 +394,6 @@ const TimelineCanvas = React.memo(({
     try {
       const transportController = AudioContextService.getTransportController();
       // Directly update the config in the map
-      // Note: accessing internal map, assumed stable API for now
       const timeline = transportController.timelineElements.get('channel-rack-timeline');
       if (timeline) {
         timeline.totalSteps = loopLength;
@@ -412,21 +403,6 @@ const TimelineCanvas = React.memo(({
     }
   }, [loopLength]);
 
-  // ✅ PERFORMANCE FIX: Update playhead position when scroll changes
-  // This ensures playhead stays in correct position during horizontal scrolling
-  useEffect(() => {
-    if (!playheadRef.current) return;
-
-    // Calculate fresh position
-    const pixelX = currentPositionRef.current * STEP_WIDTH - scrollX;
-    playheadRef.current.style.transform = `translate3d(${pixelX}px, 0, 0)`;
-
-    // Also update ghost playhead if visible
-    if (ghostPlayheadRef.current && localGhostPosition !== null) {
-      const ghostPixelX = localGhostPosition * STEP_WIDTH - scrollX;
-      ghostPlayheadRef.current.style.transform = `translate3d(${ghostPixelX}px, 0, 0)`;
-    }
-  }, [scrollX, localGhostPosition]);
 
   return (
     <div
@@ -441,106 +417,37 @@ const TimelineCanvas = React.memo(({
         cursor: 'pointer',
       }}
     >
-      {/* Canvas Timeline */}
+      {/* LAYER 1: GRID (Static) */}
       <canvas
-        ref={canvasRef}
+        ref={gridCanvasRef}
         style={{
           display: 'block',
           position: 'absolute',
-          left: 0, // ✅ FIX: Canvas stays fixed, drawings are offset by scroll
+          left: 0,
           top: 0,
           width: `${canvasWidth}px`,
           height: `${height}px`,
           imageRendering: 'crisp-edges',
+          zIndex: 1,
         }}
       />
 
-      {/* Main Playhead (overlay) */}
-      <div
-        ref={playheadRef}
-        className="timeline__playhead timeline__playhead--main"
-        title={`Position: ${currentPosition}`}
+      {/* LAYER 2: PLAYHEAD (Dynamic) */}
+      <canvas
+        ref={playheadCanvasRef}
         style={{
-          transform: `translate3d(${currentPosition * STEP_WIDTH - scrollX}px, 0, 0)`,
-          transition: 'none', // ✅ PERFORMANCE FIX: No transition for smooth 60fps updates
-          pointerEvents: 'none',
+          display: 'block',
           position: 'absolute',
-          top: 0,
-          bottom: 0,
           left: 0,
-          width: '2px',
-          backgroundColor: 'var(--zenith-accent-cool)',
-          boxShadow: '0 0 8px var(--zenith-accent-cool)',
-          zIndex: 99,
-          willChange: 'transform',
-          backfaceVisibility: 'hidden', // ✅ GPU hint
-          transformStyle: 'preserve-3d', // ✅ GPU hint
+          top: 0,
+          width: `${canvasWidth}px`,
+          height: `${height}px`,
+          imageRendering: 'crisp-edges',
+          // Transparent background implicitly
+          zIndex: 2,
+          pointerEvents: 'none' // Click-through to container
         }}
-      >
-        {/* Playhead triangle */}
-        <div
-          style={{
-            position: 'absolute',
-            top: '-2px',
-            left: '-3px',
-            width: 0,
-            height: 0,
-            borderLeft: '4px solid transparent',
-            borderRight: '4px solid transparent',
-            borderTop: '6px solid var(--zenith-accent-cool)',
-            filter: 'drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3))',
-          }}
-        />
-      </div>
-
-      {/* Ghost Playhead (hover preview) - Enhanced styling */}
-      {localGhostPosition !== null && (
-        <div
-          ref={ghostPlayheadRef}
-          className="timeline__playhead timeline__playhead--ghost"
-          style={{
-            transform: `translateX(${localGhostPosition * STEP_WIDTH - scrollX}px)`,
-            transition: 'opacity 0.15s ease-out, transform 0.05s linear',
-            pointerEvents: 'none',
-            position: 'absolute',
-            top: 0,
-            bottom: 0,
-            left: 0,
-            width: '2px',
-            background: `linear-gradient(to bottom,
-              transparent 0%,
-              rgba(var(--zenith-accent-cool-rgb), 0.3) 10%,
-              rgba(var(--zenith-accent-cool-rgb), 0.6) 50%,
-              rgba(var(--zenith-accent-cool-rgb), 0.3) 90%,
-              transparent 100%
-            )`,
-            boxShadow: `
-              0 0 6px rgba(var(--zenith-accent-cool-rgb), 0.5),
-              0 0 12px rgba(var(--zenith-accent-cool-rgb), 0.3),
-              inset 0 0 2px rgba(255, 255, 255, 0.4)
-            `,
-            opacity: 0.9,
-            zIndex: 98,
-            filter: 'blur(0.3px)',
-          }}
-        >
-          {/* Ghost playhead triangle - Enhanced */}
-          <div
-            style={{
-              position: 'absolute',
-              top: '-3px',
-              left: '-4px',
-              width: 0,
-              height: 0,
-              borderLeft: '5px solid transparent',
-              borderRight: '5px solid transparent',
-              borderTop: `7px solid rgba(var(--zenith-accent-cool-rgb), 0.8)`,
-              opacity: 1,
-              filter: 'drop-shadow(0 1px 3px rgba(var(--zenith-accent-cool-rgb), 0.6))',
-            }}
-          />
-        </div>
-      )}
+      />
     </div>
   );
 });

@@ -526,17 +526,27 @@ export class ZenithSynth {
     cleanup() {
         this._cancelCleanupTimer();
 
-        // Disconnect oscillators
+        // Disconnect and stop oscillators
         this.oscillators.forEach((osc, i) => {
             if (osc) {
                 try {
+                    // ✅ SAFETY: Explicitly stop oscillators in cleanup
+                    // Just disconnecting might leave them running in background
                     if (Array.isArray(osc)) {
-                        osc.forEach(o => o && o.disconnect());
-                    } else if (osc.disconnect) {
-                        osc.disconnect();
+                        osc.forEach(o => {
+                            if (o) {
+                                try { o.disconnect(); } catch (e) { }
+                                try { o.stop(); } catch (e) { }
+                            }
+                        });
+                    } else {
+                        try { osc.disconnect(); } catch (e) { }
+                        if (osc.stop) {
+                            try { osc.stop(); } catch (e) { }
+                        }
                     }
                 } catch (e) {
-                    // Already disconnected
+                    // Already stopped/disconnected
                 }
             }
         });

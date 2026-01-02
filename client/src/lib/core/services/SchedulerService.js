@@ -416,7 +416,7 @@ export class SchedulerService {
 
         switch (event.type) {
             case ScheduledEventType.NOTE_ON: {
-                // ✅ DEBUG: Log instrument lookup
+                /* ✅ DEBUG: Log instrument lookup
                 const availableInstruments = Array.from(this.instruments?.keys() || []);
                 logger.debug(NAMESPACES.AUDIO, `🎵 Attempting to trigger note:`, {
                     instrumentId,
@@ -425,6 +425,7 @@ export class SchedulerService {
                     availableInstruments: availableInstruments.length,
                     instrumentIds: availableInstruments
                 });
+                */
 
                 const instrument = this.instruments?.get(instrumentId);
 
@@ -440,7 +441,7 @@ export class SchedulerService {
                     return;
                 }
 
-                logger.debug(NAMESPACES.AUDIO, `✅ Triggering note on ${instrumentId}: pitch=${note.pitch}, velocity=${note.velocity}`);
+                //logger.debug(NAMESPACES.AUDIO, `✅ Triggering note on ${instrumentId}: pitch=${note.pitch}, velocity=${note.velocity}`);
                 instrument.triggerNote(note.pitch, note.velocity || 0.8, event.time);
                 break;
             }

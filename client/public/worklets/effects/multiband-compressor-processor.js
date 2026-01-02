@@ -60,11 +60,17 @@ class MultibandCompressorProcessor extends AudioWorkletProcessor {
 
   createChannelState() {
     return {
-      // Crossover filter states (Linkwitz-Riley 2nd order)
-      lowpassLow: { x1: 0, x2: 0, y1: 0, y2: 0 },
-      lowpassMid: { x1: 0, x2: 0, y1: 0, y2: 0 },
-      highpassLow: { x1: 0, x2: 0, y1: 0, y2: 0 },
-      highpassHigh: { x1: 0, x2: 0, y1: 0, y2: 0 },
+      // 🎯 Crossover filter states (Linkwitz-Riley 4th order = 2x cascaded Butterworth)
+      // First stage
+      lowpassLow1: { x1: 0, x2: 0, y1: 0, y2: 0 },
+      lowpassMid1: { x1: 0, x2: 0, y1: 0, y2: 0 },
+      highpassLow1: { x1: 0, x2: 0, y1: 0, y2: 0 },
+      highpassHigh1: { x1: 0, x2: 0, y1: 0, y2: 0 },
+      // Second stage (cascade for LR4)
+      lowpassLow2: { x1: 0, x2: 0, y1: 0, y2: 0 },
+      lowpassMid2: { x1: 0, x2: 0, y1: 0, y2: 0 },
+      highpassLow2: { x1: 0, x2: 0, y1: 0, y2: 0 },
+      highpassHigh2: { x1: 0, x2: 0, y1: 0, y2: 0 },
 
       // Per-band compression state
       bands: {
@@ -130,7 +136,7 @@ class MultibandCompressorProcessor extends AudioWorkletProcessor {
     const attack = 0.001 + (time * 0.1); // 1ms to 100ms
     // Release: Adaptive for musical response (10-500ms)
     const release = 0.01 + (time * 0.5); // 10ms to 500ms
-    
+
     // ✅ PROFESSIONAL COEFFICIENTS: Smooth envelope following
     const attackCoeff = Math.exp(-1 / (attack * this.sampleRate));
     const releaseCoeff = Math.exp(-1 / (release * this.sampleRate));
@@ -213,17 +219,21 @@ class MultibandCompressorProcessor extends AudioWorkletProcessor {
     return true;
   }
 
-  // Linkwitz-Riley 2nd order crossover filters
+  // 🎯 Linkwitz-Riley 4th order crossover filters (24dB/oct = 2x cascaded Butterworth)
   splitBands(sample, state) {
-    // Low band: 0-250Hz (lowpass)
-    const low = this.biquadLowpass(sample, state.lowpassLow, this.lowMidCrossover);
+    // LOW BAND: 0-250Hz (2x cascaded lowpass @ lowMidCrossover)
+    let low = this.biquadLowpass(sample, state.lowpassLow1, this.lowMidCrossover);
+    low = this.biquadLowpass(low, state.lowpassLow2, this.lowMidCrossover);
 
-    // High band: 2.5kHz+ (highpass)
-    const high = this.biquadHighpass(sample, state.highpassHigh, this.midHighCrossover);
+    // HIGH BAND: 2.5kHz+ (2x cascaded highpass @ midHighCrossover)
+    let high = this.biquadHighpass(sample, state.highpassHigh1, this.midHighCrossover);
+    high = this.biquadHighpass(high, state.highpassHigh2, this.midHighCrossover);
 
-    // Mid band: 250Hz-2.5kHz (difference)
-    const highMid = this.biquadHighpass(sample, state.highpassLow, this.lowMidCrossover);
-    const mid = this.biquadLowpass(highMid, state.lowpassMid, this.midHighCrossover);
+    // MID BAND: 250Hz-2.5kHz (2x cascaded HP + 2x cascaded LP)
+    let highMid = this.biquadHighpass(sample, state.highpassLow1, this.lowMidCrossover);
+    highMid = this.biquadHighpass(highMid, state.highpassLow2, this.lowMidCrossover);
+    let mid = this.biquadLowpass(highMid, state.lowpassMid1, this.midHighCrossover);
+    mid = this.biquadLowpass(mid, state.lowpassMid2, this.midHighCrossover);
 
     return { low, mid, high };
   }
@@ -244,7 +254,7 @@ class MultibandCompressorProcessor extends AudioWorkletProcessor {
 
     // ✅ STABILITY: Direct Form I for numerical stability
     const output = (b0 / a0) * input + (b1 / a0) * state.x1 + (b2 / a0) * state.x2
-                   - (a1 / a0) * state.y1 - (a2 / a0) * state.y2;
+      - (a1 / a0) * state.y1 - (a2 / a0) * state.y2;
 
     // ✅ STABILITY CHECK: Prevent filter from exploding
     if (!isFinite(output) || Math.abs(output) > 10) {
@@ -275,7 +285,7 @@ class MultibandCompressorProcessor extends AudioWorkletProcessor {
     const a2 = 1 - alpha;
 
     const output = (b0 / a0) * input + (b1 / a0) * state.x1 + (b2 / a0) * state.x2
-                   - (a1 / a0) * state.y1 - (a2 / a0) * state.y2;
+      - (a1 / a0) * state.y1 - (a2 / a0) * state.y2;
 
     // ✅ STABILITY CHECK
     if (!isFinite(output) || Math.abs(output) > 10) {
@@ -327,7 +337,7 @@ class MultibandCompressorProcessor extends AudioWorkletProcessor {
 
     // 🎯 SMOOTH GAIN APPLICATION: Prevent pumping artifacts
     const gain = this.dbToGain(gainChange);
-    
+
     // ✅ CLAMP GAIN: Prevent extreme values
     const clampedGain = Math.max(0.01, Math.min(10, gain));
     return sample * clampedGain;
@@ -348,10 +358,16 @@ class MultibandCompressorProcessor extends AudioWorkletProcessor {
 
   resetState() {
     this.channelState.forEach(state => {
-      state.lowpassLow = { x1: 0, x2: 0, y1: 0, y2: 0 };
-      state.lowpassMid = { x1: 0, x2: 0, y1: 0, y2: 0 };
-      state.highpassLow = { x1: 0, x2: 0, y1: 0, y2: 0 };
-      state.highpassHigh = { x1: 0, x2: 0, y1: 0, y2: 0 };
+      // First stage
+      state.lowpassLow1 = { x1: 0, x2: 0, y1: 0, y2: 0 };
+      state.lowpassMid1 = { x1: 0, x2: 0, y1: 0, y2: 0 };
+      state.highpassLow1 = { x1: 0, x2: 0, y1: 0, y2: 0 };
+      state.highpassHigh1 = { x1: 0, x2: 0, y1: 0, y2: 0 };
+      // Second stage (LR4)
+      state.lowpassLow2 = { x1: 0, x2: 0, y1: 0, y2: 0 };
+      state.lowpassMid2 = { x1: 0, x2: 0, y1: 0, y2: 0 };
+      state.highpassLow2 = { x1: 0, x2: 0, y1: 0, y2: 0 };
+      state.highpassHigh2 = { x1: 0, x2: 0, y1: 0, y2: 0 };
       Object.values(state.bands).forEach(band => {
         band.envelope = 0;
         band.gainReduction = 0;

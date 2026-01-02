@@ -172,6 +172,9 @@ export class ZenithSynthInstrument extends BaseInstrument {
                     // Monophonic mode: Only release if last note
                     this.activeNotes.delete(midiNote);
 
+                    // Debug log for mono release
+                    // console.log(`🎹 Mono release: note=${midiNote}, active=${this.activeNotes.size}`);
+
                     if (this.activeNotes.size === 0) {
                         const monoVoice = this.voices.get('mono');
                         if (monoVoice) {
@@ -192,16 +195,28 @@ export class ZenithSynthInstrument extends BaseInstrument {
                             this.voices.delete(midiNote);
                             this._trackNoteOff(midiNote);
                         } else {
-                            const releaseTime = voice.amplitudeEnvelope?.releaseTime || 0.5;
+                            // ✅ FIX: Ensure releaseTime is a valid number and at least minimal duration
+                            const envRelease = voice.amplitudeEnvelope?.releaseTime;
+                            const presetRelease = this.preset?.amplitudeEnvelope?.release || 0.5;
+                            // Use envelope release if available, otherwise preset, otherwise default 0.5
+                            // Clamp to minimum 0.1s to avoid immediate cutoff race conditions
+                            const releaseTime = Math.max(0.1, (typeof envRelease === 'number' ? envRelease : presetRelease));
+
+                            // console.log(`🕒 Scheduling cleanup for note ${midiNote}: release=${releaseTime}s`);
+
                             const timeoutId = setTimeout(() => {
                                 voice.dispose();
                                 this.voices.delete(midiNote);
                                 this.voiceTimeouts.delete(midiNote);
                                 this._trackNoteOff(midiNote);
-                            }, (releaseTime + 0.1) * 1000);
+                            }, (releaseTime + 0.5) * 1000); // ✅ Added extra buffer (+0.5s instead of +0.1) for safety
 
                             this.voiceTimeouts.set(midiNote, timeoutId);
                         }
+                    } else {
+                        // Voice not found - just clean up tracking
+                        // console.warn(`⚠️ Note off for missing voice: ${midiNote}`);
+                        this._trackNoteOff(midiNote);
                     }
                 }
             } else {
