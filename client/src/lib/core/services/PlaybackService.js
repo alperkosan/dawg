@@ -983,13 +983,15 @@ export class PlaybackService {
             noteAdded: this._handleNoteAdded.bind(this),
             notesAdded: this._handleNotesAdded.bind(this), // ✅ FIX: Bind the bulk handler
             noteRemoved: this._handleNoteRemoved.bind(this),
-            noteModified: this._handleNoteModified.bind(this)
+            noteModified: this._handleNoteModified.bind(this),
+            bpmChanged: this._handleBpmChange.bind(this) // ✅ NEW: BPM change handler
         };
 
         EventBus.on('NOTE_ADDED', this._boundHandlers.noteAdded);
         EventBus.on('NOTES_ADDED', this._boundHandlers.notesAdded); // ✅ NEW: Bulk handler
         EventBus.on('NOTE_REMOVED', this._boundHandlers.noteRemoved);
         EventBus.on('NOTE_MODIFIED', this._boundHandlers.noteModified);
+        EventBus.on('transport:bpmChanged', this._boundHandlers.bpmChanged); // ✅ NEW: BPM sync
 
         logger.debug(NAMESPACES.AUDIO, '✅ PlaybackService: Global event handlers bound');
     }
@@ -1004,7 +1006,96 @@ export class PlaybackService {
             EventBus.off('NOTES_ADDED', this._boundHandlers.notesAdded);
             EventBus.off('NOTE_REMOVED', this._boundHandlers.noteRemoved);
             EventBus.off('NOTE_MODIFIED', this._boundHandlers.noteModified);
+            EventBus.off('transport:bpmChanged', this._boundHandlers.bpmChanged);
             this._boundHandlers = null;
+        }
+    }
+
+    /**
+     * Handle BPM change during playback
+     * Reschedules notes with new tempo timing
+     * @param {Object} data - { bpm, oldBpm }
+     * @private
+     */
+    async _handleBpmChange(data) {
+        const { bpm, oldBpm } = data;
+
+        // Only reschedule if actively playing
+        if (!this.isPlaying || this.isPaused || !this.schedulerService) {
+            logger.debug(NAMESPACES.AUDIO, `⏱️ BPM changed ${oldBpm} → ${bpm} (not playing, skip reschedule)`);
+            return;
+        }
+
+        // Debounce rapid BPM changes
+        if (this._isHandlingBpmChange) {
+            logger.debug(NAMESPACES.AUDIO, '⚠️ BPM change ignored (already handling)');
+            return;
+        }
+        this._isHandlingBpmChange = true;
+
+        try {
+            logger.info(NAMESPACES.AUDIO, `⏱️ BPM changed ${oldBpm} → ${bpm} - rescheduling notes`);
+
+            // Cancel all currently scheduled events (they use old BPM timing)
+            this.schedulerService.cancelAll();
+
+            // Calculate adjusted start time
+            const maxLatency = this.engine.latencyCompensator?.getMaxLatencySeconds() || 0;
+            const safetyBuffer = 0.010; // 10ms buffer
+            const startDelay = Math.max(0.010, maxLatency + safetyBuffer);
+            const adjustedStartTime = this.audioContext.currentTime + startDelay;
+
+            // Get current position
+            const currentStep = this.transport?.getCurrentStep() || this.currentPosition || 0;
+
+            // Get pattern/song data
+            const { useArrangementStore } = await import('@/store/useArrangementStore');
+            const arrangementStore = useArrangementStore.getState();
+            const currentMode = this.playbackMode || 'pattern';
+
+            if (currentMode === 'song') {
+                // Song mode
+                const arrangementClips = arrangementStore.arrangementClips || [];
+                const arrangementTracks = arrangementStore.arrangementTracks || [];
+                const patterns = arrangementStore.patterns || {};
+
+                if (arrangementClips.length > 0) {
+                    const songData = {
+                        clips: arrangementClips,
+                        tracks: arrangementTracks,
+                        patterns: patterns
+                    };
+
+                    await this.schedulerService.scheduleSong(
+                        songData,
+                        adjustedStartTime,
+                        bpm // ✅ Use NEW BPM
+                    );
+                    logger.debug(NAMESPACES.AUDIO, `✅ Rescheduled song with new BPM ${bpm}`);
+                }
+            } else {
+                // Pattern mode
+                const activePatternId = arrangementStore.activePatternId;
+                const activePattern = arrangementStore.patterns[activePatternId];
+
+                if (activePattern && activePattern.data) {
+                    this.schedulerService.schedulePattern(
+                        activePatternId,
+                        activePattern,
+                        adjustedStartTime,
+                        bpm, // ✅ Use NEW BPM
+                        currentStep // Continue from current position
+                    );
+                    logger.debug(NAMESPACES.AUDIO, `✅ Rescheduled pattern ${activePatternId} with new BPM ${bpm} from step ${currentStep}`);
+                }
+            }
+        } catch (error) {
+            logger.error(NAMESPACES.AUDIO, 'Failed to reschedule on BPM change:', error);
+        } finally {
+            // Allow next BPM change event after short delay
+            setTimeout(() => {
+                this._isHandlingBpmChange = false;
+            }, 50);
         }
     }
 

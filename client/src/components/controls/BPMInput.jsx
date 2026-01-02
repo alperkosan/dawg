@@ -51,6 +51,9 @@ export function BPMInput({
   const presetButtonRef = useRef(null);
   const presetMenuRef = useRef(null);
   const tapTimeoutRef = useRef(null);
+  const repeatIntervalRef = useRef(null);
+  const repeatTimeoutRef = useRef(null);
+  const repeatStartTimeRef = useRef(null);
 
   // Sync with external value changes
   useEffect(() => {
@@ -94,7 +97,15 @@ export function BPMInput({
   // Handle input focus
   const handleFocus = useCallback((e) => {
     setIsEditing(true);
-    // Select all text on focus
+    // Select all text on focus - use setTimeout to override browser's default selection behavior
+    const input = e.target;
+    setTimeout(() => {
+      input.select();
+    }, 0);
+  }, []);
+
+  // Handle input click - ensure text is selected on click
+  const handleClick = useCallback((e) => {
     e.target.select();
   }, []);
 
@@ -143,8 +154,8 @@ export function BPMInput({
     }
 
     // Allow: backspace, delete, tab, escape, enter, numbers, decimal point
-    if (!/[0-9.]/.test(e.key) && 
-        !['Backspace', 'Delete', 'Tab', 'Escape', 'Enter', 'ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) {
+    if (!/[0-9.]/.test(e.key) &&
+      !['Backspace', 'Delete', 'Tab', 'Escape', 'Enter', 'ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) {
       e.preventDefault();
     }
   }, [disabled, value, tempValue, handleValueChange, handleBlur, onCancel]);
@@ -153,7 +164,7 @@ export function BPMInput({
   const handleWheel = useCallback((e) => {
     if (disabled || !isHovered) return;
     e.preventDefault();
-    
+
     const direction = e.deltaY > 0 ? -1 : 1;
     const step = e.shiftKey ? WHEEL_STEP * 5 : WHEEL_STEP;
     const current = parseFloat(tempValue) || value;
@@ -175,6 +186,84 @@ export function BPMInput({
     handleValueChange(current - step, true);
   }, [value, tempValue, handleValueChange]);
 
+  // ✅ NEW: Hold-to-repeat with acceleration
+  // Use ref to always get latest value (avoids stale closure issue)
+  const currentValueRef = useRef(value);
+  useEffect(() => {
+    currentValueRef.current = value;
+  }, [value]);
+
+  // Define stopRepeat first to avoid reference error
+  const stopRepeat = useCallback(() => {
+    if (repeatTimeoutRef.current) {
+      clearTimeout(repeatTimeoutRef.current);
+      repeatTimeoutRef.current = null;
+    }
+    if (repeatIntervalRef.current) {
+      clearTimeout(repeatIntervalRef.current);
+      repeatIntervalRef.current = null;
+    }
+    repeatStartTimeRef.current = null;
+  }, []);
+
+  const startRepeat = useCallback((direction, shiftKey = false) => {
+    // Clear any existing repeat inline (don't call stopRepeat to avoid dep issue)
+    if (repeatTimeoutRef.current) {
+      clearTimeout(repeatTimeoutRef.current);
+      repeatTimeoutRef.current = null;
+    }
+    if (repeatIntervalRef.current) {
+      clearTimeout(repeatIntervalRef.current);
+      repeatIntervalRef.current = null;
+    }
+
+    repeatStartTimeRef.current = Date.now();
+    const baseStep = shiftKey ? SHIFT_ARROW_STEP : ARROW_STEP;
+
+    const doRepeat = () => {
+      const elapsed = Date.now() - repeatStartTimeRef.current;
+      // ✅ FIX: Read from ref instead of closure-captured value
+      const current = currentValueRef.current;
+
+      // Acceleration: speed up after holding for a while
+      // 0-500ms: normal step
+      // 500-1500ms: 2x step
+      // 1500ms+: 5x step
+      let stepMultiplier = 1;
+      if (elapsed > 1500) {
+        stepMultiplier = 5;
+      } else if (elapsed > 500) {
+        stepMultiplier = 2;
+      }
+
+      const step = baseStep * stepMultiplier;
+      const newValue = current + (direction * step);
+      handleValueChange(newValue, true);
+
+      // Accelerate interval: start at 200ms, go down to 30ms
+      let nextInterval = 200;
+      if (elapsed > 1500) {
+        nextInterval = 30;
+      } else if (elapsed > 1000) {
+        nextInterval = 50;
+      } else if (elapsed > 500) {
+        nextInterval = 100;
+      }
+
+      repeatIntervalRef.current = setTimeout(doRepeat, nextInterval);
+    };
+
+    // Initial delay before repeat starts (300ms)
+    repeatTimeoutRef.current = setTimeout(doRepeat, 300);
+  }, [handleValueChange]);
+
+  // Clean up on unmount
+  useEffect(() => {
+    return () => {
+      stopRepeat();
+    };
+  }, [stopRepeat]);
+
   // Handle tap tempo
   const handleTapTempo = useCallback(() => {
     const now = Date.now();
@@ -195,7 +284,7 @@ export function BPMInput({
       }
       const avgInterval = intervals.reduce((a, b) => a + b, 0) / intervals.length;
       const calculatedBPM = Math.round((60000 / avgInterval) * 10) / 10; // Round to 1 decimal
-      
+
       if (calculatedBPM > 0 && calculatedBPM < 1000) {
         handleValueChange(calculatedBPM, true);
       }
@@ -244,7 +333,7 @@ export function BPMInput({
 
     const handleClickOutside = (e) => {
       if (
-        containerRef.current && 
+        containerRef.current &&
         !containerRef.current.contains(e.target) &&
         presetMenuRef.current &&
         !presetMenuRef.current.contains(e.target)
@@ -275,9 +364,14 @@ export function BPMInput({
             type="button"
             className="bpm-input-btn bpm-input-btn--decrement"
             onClick={handleDecrement}
-            onMouseDown={(e) => e.preventDefault()}
+            onMouseDown={(e) => {
+              e.preventDefault();
+              startRepeat(-1, e.shiftKey);
+            }}
+            onMouseUp={stopRepeat}
+            onMouseLeave={stopRepeat}
             disabled={disabled}
-            title="Decrease BPM (Shift+Click for ±10)"
+            title="Decrease BPM (Hold for acceleration, Shift+Click for ±10)"
           >
             <ChevronDown size={14} />
           </button>
@@ -295,6 +389,7 @@ export function BPMInput({
             }}
             onFocus={handleFocus}
             onBlur={handleBlur}
+            onClick={handleClick}
             onKeyDown={handleKeyDown}
             className={`bpm-input ${!isValid && isEditing ? 'invalid' : ''} ${isEditing ? 'editing' : ''}`}
             disabled={disabled}
@@ -314,9 +409,14 @@ export function BPMInput({
             type="button"
             className="bpm-input-btn bpm-input-btn--increment"
             onClick={handleIncrement}
-            onMouseDown={(e) => e.preventDefault()}
+            onMouseDown={(e) => {
+              e.preventDefault();
+              startRepeat(1, e.shiftKey);
+            }}
+            onMouseUp={stopRepeat}
+            onMouseLeave={stopRepeat}
             disabled={disabled}
-            title="Increase BPM (Shift+Click for ±10)"
+            title="Increase BPM (Hold for acceleration, Shift+Click for ±10)"
           >
             <ChevronUp size={14} />
           </button>

@@ -1172,13 +1172,44 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
     }, []); // Only register once on mount
 
     // Playhead canvas - fast rendering via UIUpdateManager (uses engineRef from top of component)
+    // ✅ FIX: Also re-render when viewport changes (scroll/zoom) to update paused playhead position
+    const viewportScrollX = engine.viewport?.scrollX || 0;
+    const viewportWidth = engine.viewport?.width || 0;
+    const dimensionsStepWidth = engine.dimensions?.stepWidth || 16;
+
     useEffect(() => {
         if (!isPlaying) {
             const canvas = playheadCanvasRef.current;
             const ctx = canvas?.getContext('2d');
             if (ctx) {
+                // ✅ FIX: Don't just clear - redraw playhead at paused position
+                const dpr = window.devicePixelRatio || 1;
                 const rect = canvas.getBoundingClientRect();
+
+                if (canvas.width !== rect.width * dpr || canvas.height !== rect.height * dpr) {
+                    canvas.width = rect.width * dpr;
+                    canvas.height = rect.height * dpr;
+                    ctx.scale(dpr, dpr);
+                }
+
                 ctx.clearRect(0, 0, rect.width, rect.height);
+
+                // Draw playhead at current paused position (orange color for stopped state)
+                const currentPosition = usePlaybackStore.getState().currentStep;
+                const currentEngine = engineRef.current;
+
+                if (currentEngine?.viewport?.width) {
+                    drawPlayhead(ctx, {
+                        viewport: currentEngine.viewport,
+                        dimensions: currentEngine.dimensions,
+                        playhead: {
+                            position: currentPosition,
+                            isPlaying: false,
+                            playbackState: 'stopped'
+                        },
+                        isRecording: false
+                    });
+                }
             }
             return;
         }
@@ -1217,12 +1248,12 @@ function PianoRoll({ isVisible: panelVisibleProp = true }) {
                     isRecording: isRecording // ✅ Pass recording state
                 });
             },
-            UPDATE_PRIORITIES.HIGH, // Important but can defer slightly
+            UPDATE_PRIORITIES.CRITICAL, // ✅ FIX: Use CRITICAL for smooth 60fps playhead
             UPDATE_FREQUENCIES.REALTIME // 60fps with frame budget protection
         );
 
         return unsubscribe;
-    }, [isPlaying]); // ✅ OPTIMIZED: Only re-subscribe when play/stop state changes
+    }, [isPlaying, viewportScrollX, viewportWidth, dimensionsStepWidth]); // ✅ FIX: Re-render on viewport/zoom changes
 
     // Toolbar handlers
     const handleToolChange = (tool) => {

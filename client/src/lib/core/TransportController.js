@@ -580,10 +580,6 @@ class TransportController {
             this.transport.setBPM(bpm);
         }
 
-        if (this.transport) {
-            this.transport.setBPM(bpm);
-        }
-
         EventBus.emit('transport:bpmChanged', { bpm, oldBpm });
         console.log(`🎵 BPM: ${oldBpm} → ${bpm}`);
     }
@@ -622,10 +618,6 @@ class TransportController {
      */
     setLoopEnabled(enabled) {
         this.loopEnabled = enabled;
-
-        if (this.transport) {
-            this.transport.setLoopEnabled(enabled);
-        }
 
         if (this.transport) {
             this.transport.setLoopEnabled(enabled);

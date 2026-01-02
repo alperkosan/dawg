@@ -476,6 +476,11 @@ export class NativeTransportSystem {
 
         this.bpm = bpm;
 
+        // ✅ CRITICAL: Write BPM to SharedArrayBuffer for WASM/AudioWorklet sync
+        if (this.sharedFloat) {
+            this.sharedFloat[this.SAB_IDX_BPM] = bpm;
+        }
+
         // ✅ FAZ 1: Update schedule ahead time when BPM changes
         this._updateScheduleAheadTime();
 
@@ -490,7 +495,24 @@ export class NativeTransportSystem {
             const currentTime = this.audioContext.currentTime;
             this.nextTickTime = currentTime;
 
-            console.log(`⏱️ BPM Change: ${oldBpm} -> ${bpm}. Scheduler window reset at tick ${this.currentTick}`);
+            // ✅ CRITICAL FIX: Reset playback timing anchor for _startSyncLoop
+            // Without this, tick calculation continues using old BPM reference
+            if (this._playbackStartTime !== undefined) {
+                // Calculate current tick position using OLD BPM
+                const elapsedSeconds = currentTime - this._playbackStartTime;
+                const oldTicksPerSecond = oldBpm / 60 * this.ppq;
+                const currentCalculatedTick = this._playbackStartTick + (elapsedSeconds * oldTicksPerSecond);
+
+                // Reset anchor to NOW with current tick position
+                // From this point, _startSyncLoop will use NEW BPM for calculations
+                this._playbackStartTime = currentTime;
+                this._playbackStartTick = currentCalculatedTick;
+                this.currentTick = currentCalculatedTick;
+
+                console.log(`⏱️ BPM anchor reset: tick ${currentCalculatedTick.toFixed(2)} @ ${currentTime.toFixed(3)}s (${oldBpm} → ${bpm})`);
+            } else {
+                console.log(`⏱️ BPM Change: ${oldBpm} -> ${bpm}. Scheduler window reset at tick ${this.currentTick}`);
+            }
         }
 
         this.triggerCallback('bpm', { bpm: this.bpm, oldBpm, wasPlaying });
