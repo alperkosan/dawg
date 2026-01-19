@@ -139,12 +139,18 @@ export class NoteScheduler {
             const relativeTime = noteTimeInSeconds - currentPositionInSeconds;
             let absoluteTimeRaw = baseTime + relativeTime;
 
-            // ✅ FIX 4: Loop boundary tolerance
-            // When loop restarts, currentPosition might be slightly > 0 (jitter).
-            // This makes notes at exactly 0 appear "in the past" relative to baseTime.
-            // We add a tolerance (e.g. 100ms) to play these "slightly late" notes immediately
-            // instead of pushing them to the next loop iteration.
-            const LOOP_BOUNDARY_TOLERANCE = 0.1;
+            // ✅ OPTIMIZATION #3: Dynamic loop boundary tolerance based on step duration
+            // Faster tempo = tighter tolerance
+            const stepDuration = this.transport.stepsToSeconds(1);
+
+            // Calculate adaptive tolerance:
+            // - At least 2 steps worth of time (for timing jitter absorption)
+            // - Maximum 100ms (original fixed value for slow tempo)
+            // - Minimum 10ms (for very high BPM)
+            const LOOP_BOUNDARY_TOLERANCE = Math.max(
+                0.010,                              // Min 10ms
+                Math.min(0.100, stepDuration * 2)   // Max 100ms, adaptive to BPM
+            );
 
             // ✅ FIX 3: Handle loop-aware scheduling with proper current position handling
             if (absoluteTimeRaw < baseTime - LOOP_BOUNDARY_TOLERANCE) {

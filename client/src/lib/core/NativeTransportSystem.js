@@ -303,9 +303,11 @@ export class NativeTransportSystem {
 
             // 2. ✅ Loop Boundary Detection
             if (this.loop && this.loopEndTick > 0 && currentWasmTick >= this.loopEndTick) {
-                // Only fire if cooldown has passed (prevent multiple triggers)
-                if (now - this._loopEventCooldown > 100) {
+                // ✅ FIX: Increased cooldown to prevent double-trigger during async handler
+                if (now - this._loopEventCooldown > 200) {
                     this._loopEventCooldown = now;
+
+                    console.log(`🔁 [LOOP RESTART] Triggered @ ${audioTime.toFixed(3)}s, tick ${currentWasmTick.toFixed(1)} → ${this.loopStartTick}`);
 
                     // Calculate new position
                     const newTick = this.loopStartTick || 0;

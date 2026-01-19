@@ -284,8 +284,24 @@ export class SchedulerService {
      * @param {boolean} forceReleaseActive - If true, immediately releases currently playing notes
      */
     cancelAll(forceReleaseActive = true) {
+        const currentTime = this.audioContext?.currentTime || 0;
+
+        // ✅ FIX #3: Safe threshold - don't cancel events within 1ms of executing
+        // This prevents race condition where we cancel an event that's about to trigger
+        const SAFE_THRESHOLD_MS = 0.001; // 1ms
+        const safeThreshold = currentTime + SAFE_THRESHOLD_MS;
+
+        let preservedCount = 0;
+
         this.scheduledEvents.forEach(event => {
             if (event.executed) return;
+
+            // ✅ FIX #3: Keep events that are about to execute (within 1ms)
+            // Let them finish naturally rather than causing audio glitches
+            if (event.time && event.time <= safeThreshold) {
+                preservedCount++;
+                return; // Skip cancellation
+            }
 
             // ✅ CRITICAL FIX: Prevent hanging notes
             // If we cancel a NoteOff for a note that is currently playing (NoteOn executed),
@@ -311,10 +327,24 @@ export class SchedulerService {
             this.stats.eventsCancelled++;
         });
 
-        this.scheduledEvents.clear();
+        // ✅ FIX #3: Only clear cancelled events, preserve imminent ones
+        const eventsToDelete = [];
+        this.scheduledEvents.forEach((event, id) => {
+            if (event.cancelled) {
+                eventsToDelete.push(id);
+            }
+        });
+        eventsToDelete.forEach(id => this.scheduledEvents.delete(id));
+
         this.scheduledNotes.clear();
 
-        logger.debug(NAMESPACES.AUDIO, 'All scheduled events cancelled (active notes released)');
+        if (preservedCount > 0 && import.meta.env.DEV) {
+            logger.debug(NAMESPACES.AUDIO,
+                `🎵 CancelAll: Preserved ${preservedCount} imminent events (< 1ms), cancelled ${eventsToDelete.length}`
+            );
+        } else {
+            logger.debug(NAMESPACES.AUDIO, `All scheduled events cancelled (${eventsToDelete.length}, active notes released)`);
+        }
     }
 
     /**

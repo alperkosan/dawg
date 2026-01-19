@@ -55,12 +55,17 @@ import { LatencyCompensator } from './utils/LatencyCompensator.js';
 // ✅ WASM: Wasm Audio Engine Bridge
 import { wasmAudioEngine } from './WasmAudioEngine.js';
 import { UnifiedMixerNode } from './UnifiedMixerNode.js';
+// ✅ PHASE 1: New transport architecture
+import { TransportFacade } from './audio/TransportFacade.js';
+import { ContinuousScheduler } from './audio/ContinuousScheduler.js';
 
 export class NativeAudioEngine {
     constructor(callbacks = {}) {
         // =================== CORE SYSTEMS ===================
         this.audioContext = null;
-        this.transport = null;
+        this.transport = null; // Will be TransportFacade (new architecture)
+        this.legacyTransport = null; // Old NativeTransportSystem (for backwards compat)
+        this.continuousScheduler = null; // ✅ PHASE 2: Continuous scheduling
         this.workletManager = null;
         this.playbackManager = null; // ✅ NEW: Advanced playback management
         this.performanceMonitor = null; // ✅ NEW: Performance monitoring
@@ -216,8 +221,25 @@ export class NativeAudioEngine {
     async _initializeCore() {
         setGlobalAudioContext(this.audioContext);
 
-        // 1. Initialize Transport System
-        this.transport = new NativeTransportSystem(this.audioContext);
+        // 1. ✅ PHASE 1: Initialize New Transport Architecture
+        logger.info(NAMESPACES.AUDIO, '🎛️ Initializing new transport architecture...');
+
+        // Create legacy transport (for backwards compatibility with WASM/SAB)
+        this.legacyTransport = new NativeTransportSystem(this.audioContext);
+
+        // Create new transport facade (delegates to StateMachine + AudioClock)
+        this.transport = new TransportFacade(this.audioContext, this.legacyTransport);
+
+        // Create continuous scheduler
+        this.continuousScheduler = new ContinuousScheduler(
+            this.audioContext,
+            this.transport.stateMachine,
+            this.transport.clock,
+            { lookaheadTime: 0.2, tickInterval: 25 }
+        );
+
+        logger.info(NAMESPACES.AUDIO, '✅ New transport architecture initialized');
+
         this._setupTransportCallbacks();
 
         // 2. Initialize Worklet Manager

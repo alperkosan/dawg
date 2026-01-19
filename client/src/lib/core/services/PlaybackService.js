@@ -161,7 +161,7 @@ export class PlaybackService {
 
             // ✅ PHASE 1.2: Calculate ADC pre-delay for plugin latency compensation
             const maxLatency = this.engine.latencyCompensator?.getMaxLatencySeconds() || 0;
-            const safetyBuffer = 0.050; // 50ms safety buffer for lookahead stability
+            const safetyBuffer = this._calculateAdaptiveSafetyBuffer(); // ✅ OPT #1: Adaptive buffer
             const startDelay = Math.max(0.010, maxLatency + safetyBuffer); // Min 10ms
             const adjustedStartTime = this.audioContext.currentTime + startDelay;
 
@@ -173,12 +173,11 @@ export class PlaybackService {
 
             // Start transport with adjusted time
             if (this.transport) {
-                // ✅ CRITICAL FIX: Setup loop event listener (only once)
-                if (!this._loopListenerSetup) {
-                    this.transport.on('loop', this._handleLoopRestart.bind(this));
-                    this._loopListenerSetup = true;
-                    logger.debug(NAMESPACES.AUDIO, '✅ Loop restart listener registered');
-                }
+                // ✅ FIX #2: Always re-register loop listener (remove singleton pattern)
+                // This ensures listener survives AudioContext suspend/resume cycles
+                this.transport.off('loop', this._handleLoopRestart); // Clean old listener
+                this.transport.on('loop', this._handleLoopRestart.bind(this));
+                logger.debug(NAMESPACES.AUDIO, '✅ Loop restart listener registered');
 
                 this.transport.start(adjustedStartTime);
 
@@ -294,6 +293,9 @@ export class PlaybackService {
             // Stop transport
             if (this.transport) {
                 this.transport.stop();
+
+                // ✅ FIX #2: Cleanup loop listener on stop
+                this.transport.off('loop', this._handleLoopRestart);
             }
 
             // Release all notes gracefully
@@ -381,7 +383,7 @@ export class PlaybackService {
 
             // ✅ Calculate ADC pre-delay for latency compensation
             const maxLatency = this.engine.latencyCompensator?.getMaxLatencySeconds() || 0;
-            const safetyBuffer = 0.050;
+            const safetyBuffer = this._calculateAdaptiveSafetyBuffer(); // ✅ OPT #1: Adaptive buffer
             const startDelay = Math.max(0.010, maxLatency + safetyBuffer);
             const adjustedStartTime = this.audioContext.currentTime + startDelay;
 
@@ -777,6 +779,33 @@ export class PlaybackService {
     }
 
     /**
+     * ✅ OPTIMIZATION #1: Calculate adaptive safety buffer based on BPM
+     * Higher BPM = tighter timing = smaller buffer
+     * @returns {number} Safety buffer in seconds
+     * @private
+     */
+    _calculateAdaptiveSafetyBuffer() {
+        const currentBPM = this.engine.transport?.bpm || 120;
+
+        // BPM factor: normalize to 120 BPM baseline
+        // 60 BPM → 2.0x buffer
+        // 120 BPM → 1.0x buffer  
+        // 240 BPM → 0.5x buffer
+        const bpmFactor = Math.max(0.5, Math.min(2.0, 120 / currentBPM));
+
+        // Base buffer: 30ms @ 120 BPM
+        // Range: 15ms @ 240+ BPM to 60ms @ 60 BPM
+        const baseBuffer = 0.030; // 30ms
+        const adaptiveBuffer = baseBuffer * bpmFactor;
+
+        logger.debug(NAMESPACES.AUDIO,
+            `Adaptive safety buffer: ${(adaptiveBuffer * 1000).toFixed(1)}ms @ ${currentBPM} BPM`
+        );
+
+        return adaptiveBuffer;
+    }
+
+    /**
      * Start position tracking interval
      * @private
      */
@@ -874,24 +903,47 @@ export class PlaybackService {
 
         // ✅ FIX: Debounce loop handling to prevent duplicate schedules
         if (this._isHandlingLoop) {
+            console.log('🚫 [LOOP RESTART] Already handling, skip (debounce)');
             logger.debug(NAMESPACES.AUDIO, '⚠️ Loop restart ignored (already handling)');
             return;
         }
         this._isHandlingLoop = true;
 
+        const loopStartTimestamp = performance.now();
+        console.log(`\n🎬 [LOOP RESTART START] @ ${loopStartTimestamp.toFixed(1)}ms`);
+
         try {
             logger.debug(NAMESPACES.AUDIO, '🔁 Loop restart detected - rescheduling pattern');
+
+            // ✅ FIX #1: Clear active note tracking BEFORE cancelAll
+            // This prevents false-positive overlap detection in next iteration
+            // Try multiple paths to find noteScheduler instance
+            const noteScheduler =
+                this.engine?.noteScheduler ||              // Direct engine reference
+                this.engine?.playbackManager?.noteScheduler || // Via PlaybackManager
+                this.schedulerService?.noteScheduler;       // Via SchedulerService
+
+            if (noteScheduler && typeof noteScheduler.clearActiveNotes === 'function') {
+                noteScheduler.clearActiveNotes();
+                logger.debug(NAMESPACES.AUDIO, '🧹 Active note map cleared for loop restart');
+            } else {
+                logger.warn(NAMESPACES.AUDIO, '⚠️ Could not find noteScheduler to clear active notes');
+            }
 
             // Cancel all currently scheduled events (they're from the previous loop)
             this.schedulerService.cancelAll();
 
             // Calculate time for new loop iteration
             const maxLatency = this.engine.latencyCompensator?.getMaxLatencySeconds() || 0;
-            // ✅ CRITICAL FIX: Reduced buffer from 50ms to 10ms to minimize stutter/gap at loop boundary
-            // The previous 50ms buffer caused the first ~50ms of notes in the loop to be skipped/delayed
-            const safetyBuffer = 0.010;
+            const adaptiveBuffer = this._calculateAdaptiveSafetyBuffer();
+
+            // ✅ FIX: Loop restart needs minimum 20ms buffer to prevent first note lag
+            // Adaptive buffer can be too small (15ms @ 240 BPM) for loop restart reschedule
+            const safetyBuffer = Math.max(0.020, adaptiveBuffer); // Min 20ms for loop restart
             const startDelay = Math.max(0.010, maxLatency + safetyBuffer);
             const adjustedStartTime = this.audioContext.currentTime + startDelay;
+
+            console.log(`⏱️ [LOOP TIMING] Buffer: ${(safetyBuffer * 1000).toFixed(1)}ms, Delay: ${(startDelay * 1000).toFixed(1)}ms, StartTime: ${adjustedStartTime.toFixed(3)}s`);
 
             // Get pattern data
             const { useArrangementStore } = await import('@/store/useArrangementStore');
@@ -938,10 +990,19 @@ export class PlaybackService {
             }
         } catch (error) {
             logger.error(NAMESPACES.AUDIO, 'Failed to reschedule on loop restart:', error);
+            console.error('❌ [LOOP RESTART ERROR]', error);
         } finally {
             // Allow next loop event after a short delay
             setTimeout(() => {
                 this._isHandlingLoop = false;
+                const loopEndTimestamp = performance.now();
+                const duration = loopEndTimestamp - loopStartTimestamp;
+                console.log(`✅ [LOOP RESTART END] Duration: ${duration.toFixed(1)}ms\n`);
+
+                // ✅ CRITICAL: Clear the transport's restart flag
+                if (event?._clearRestartFlag) {
+                    event._clearRestartFlag();
+                }
             }, 50);
         }
     }
@@ -967,6 +1028,12 @@ export class PlaybackService {
         this.stop();
         this._stopPositionTracking();
         this._unbindGlobalEvents();
+
+        // ✅ FIX #2: Cleanup loop listener on dispose
+        if (this.transport) {
+            this.transport.off('loop', this._handleLoopRestart);
+        }
+
         this._listeners.clear();
         logger.info(NAMESPACES.AUDIO, 'PlaybackService disposed');
     }
