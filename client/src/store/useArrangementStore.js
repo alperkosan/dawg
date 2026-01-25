@@ -1291,3 +1291,11 @@ export const useArrangementStore = create(arrangementStoreOrchestrator((set, get
   }
 
 })));
+
+// ===== GLOBAL EXPOSURE FOR CONTINUOUS SCHEDULER =====
+// Expose store to window for synchronous access in scheduler
+// This avoids async import issues during audio thread scheduling
+if (typeof window !== 'undefined') {
+  if (!window.__stores) window.__stores = {};
+  window.__stores.useArrangementStore = useArrangementStore;
+}

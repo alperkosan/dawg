@@ -64,7 +64,8 @@ const logScheduling = DEBUG_SCHEDULING ? (...args) => console.log('📅', ...arg
  * Prevents excessive rescheduling when multiple notes are added/removed rapidly
  */
 class SchedulingOptimizer {
-    constructor() {
+    constructor(transport = null) {
+        this.transport = transport; // ✅ PHASE 0 FIX: Store transport reference for real-time state check
         this.pendingSchedule = null;
         // ✅ FAZ 1: Optimized debounce time for better real-time responsiveness
         this.scheduleDebounceTime = 16; // 16ms (60fps) - reduced from 50ms
@@ -75,7 +76,7 @@ class SchedulingOptimizer {
             realtime: 4, // ✅ FAZ 1: Reduced from 12ms to 4ms (250Hz)
             burst: 0
         };
-        this.isPlaybackActive = false;
+        this.isPlaybackActive = false; // ✅ Kept for backwards compatibility, but prefer transport.isPlaying
     }
 
     setPlaybackActivity(isActive) {
@@ -128,7 +129,13 @@ class SchedulingOptimizer {
 
     _resolvePriority(priority) {
         if (priority === 'auto') {
-            return this.isPlaybackActive ? 'realtime' : 'idle';
+            // ✅ PHASE 0 FIX: Check actual Transport state, not cached boolean
+            // This prevents stale priority resolution when play() is called immediately after requestSchedule()
+            const isActuallyPlaying = this.transport?.isPlaying ?? this.isPlaybackActive;
+
+            // ✅ CRITICAL: If playing, use BURST (immediate) not realtime (4ms delay)
+            // 4ms delay can cause first notes to be scheduled late → audible gap
+            return isActuallyPlaying ? 'burst' : 'idle';
         }
         return priority;
     }
@@ -147,7 +154,8 @@ export class PlaybackManager {
         this.transport = audioEngine.transport;
 
         // ⚡ OPTIMIZATION: Initialize scheduling optimizer
-        this.schedulingOptimizer = new SchedulingOptimizer();
+        // ✅ PHASE 0 FIX: Pass transport reference for real-time state checking
+        this.schedulingOptimizer = new SchedulingOptimizer(this.transport);
 
         // ✅ NEW: Initialize position tracker
         this.positionTracker = new PositionTracker(this.transport);
@@ -177,9 +185,9 @@ export class PlaybackManager {
         this.isPlaying = false;
         this.isPaused = false;
 
-        // ✅ PHASE 1: Position now reads from Transport (Single Source of Truth)
-        // Keeping private backing field for transition period
-        this._currentPosition = 0; // Will be removed in Phase 3
+        // ✅ PHASE 0 FIX: Position backing field REMOVED
+        // Position now EXCLUSIVELY reads from Transport (Single Source of Truth)
+        // this._currentPosition = 0; // DELETED - was causing race conditions on resume/loop
 
         this._isLoopRestarting = false; // ✅ FIX: Track loop restart state to prevent send/unsend during restart
 
@@ -222,8 +230,10 @@ export class PlaybackManager {
      * @returns {number} Current position (derived from Transport)
      */
     get currentPosition() {
-        // Read from Transport (single source of truth)
-        return this.transport?.getCurrentStep() || this._currentPosition || 0;
+        // ✅ PHASE 0 FIX: ONLY read from Transport (no fallback to _currentPosition)
+        // Transport.getCurrentStep() can legitimately return 0 (loop start, reset)
+        // Using || fallback was causing race conditions
+        return this.transport?.getCurrentStep() ?? 0;
     }
 
     /**
@@ -404,6 +414,12 @@ export class PlaybackManager {
         const arrangementStore = useArrangementStore.getState();
         if (patternId !== arrangementStore.activePatternId) {
             return;
+        }
+
+        // ✅ PHASE 0 FIX: Clear automation on pattern switch to prevent leakage
+        if (changeType === 'pattern-switch' && this.isPlaying) {
+            console.log('🎚️ [AutomationLifecycle] Pattern switch detected - stopping old automations');
+            this.automationScheduler.stopAllRealtimeAutomations();
         }
 
         this._markAllDirty(`pattern-${changeType || 'change'}`);
@@ -643,9 +659,24 @@ export class PlaybackManager {
         if (!this._loopRestartCount) this._loopRestartCount = 0;
         this._loopRestartCount++;
 
-        if (this._lastLoopRestartTime && (now - this._lastLoopRestartTime) < 100) {
+        // ✅ PHASE 0 FIX: Reduced debounce from 100ms to 50ms (less waiting, still prevents thrashing)
+        if (this._lastLoopRestartTime && (now - this._lastLoopRestartTime) < 50) {
             console.warn(`⏭️ [LOOP RESTART] Debounced (#${this._loopRestartCount}) - ${(now - this._lastLoopRestartTime).toFixed(1)}ms since last restart`);
             return;
+        }
+
+        // ✅ PHASE 0 FIX: Validate Transport position consistency
+        const transportPosition = this.currentPosition; // Reads from Transport
+        const expectedLoopStart = this.loopStart; // Reads from Transport
+
+        if (Math.abs(transportPosition - expectedLoopStart) > 0.5) {
+            console.error(`❌ [LOOP RESTART] Position mismatch detected!`, {
+                transportPosition,
+                expectedLoopStart,
+                drift: (transportPosition - expectedLoopStart).toFixed(2),
+                transportTick: this.transport?.currentTick,
+                loopStartTick: this.transport?.loopStartTick
+            });
         }
 
         // ✅ DIAGNOSTIC: Log successful loop restart
@@ -654,7 +685,8 @@ export class PlaybackManager {
             loopStart: this.loopStart,
             loopEnd: this.loopEnd,
             transportTick: this.transport?.currentTick,
-            transportLoopEnd: this.transport?.loopEndTick
+            transportLoopEnd: this.transport?.loopEndTick,
+            positionValid: Math.abs(transportPosition - expectedLoopStart) <= 0.5
         });
 
         this._lastLoopRestartTime = now;
@@ -1388,6 +1420,14 @@ export class PlaybackManager {
         const { instrumentFilterSet = null, reason = 'manual' } = options;
 
         console.log(`🎵 [_schedulePatternContent] CALLED: baseTime=${baseTime?.toFixed(3)}, reason=${reason}, options=${JSON.stringify(options)}`);
+
+        // ✅ PHASE 0 FIX: Clear old automation on pattern switch/structure change
+        // Prevents automation from old pattern bleeding into new pattern
+        const isPatternSwitch = reason?.includes('pattern-') || reason === 'manual';
+        if (isPatternSwitch && this.isPlaying) {
+            console.log('🎚️ [AutomationLifecycle] Stopping old pattern automations before scheduling new pattern');
+            this.automationScheduler.stopAllRealtimeAutomations();
+        }
 
         // ✅ OPTIMIZED: Simplified position handling without excessive logging
         const isResume = reason === 'resume';

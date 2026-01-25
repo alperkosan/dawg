@@ -38,9 +38,17 @@ export class PlaybackFacade {
         this._playbackService = new PlaybackService(audioEngine);
         this._schedulerService = new SchedulerService(audioEngine);
 
+        // ✅ CRITICAL: Inject SchedulerService into engine to prevent lazy getter from creating a second instance
+        // This ensures only ONE SchedulerService instance exists in the entire system
+        audioEngine._schedulerService = this._schedulerService;
+
         // Link services together
         this._playbackService.schedulerService = this._schedulerService;
         this._schedulerService.playbackService = this._playbackService;
+
+        // ✅ CRITICAL: Initialize scheduler adapter AFTER schedulerService is set
+        // This ensures ContinuousScheduler gets the correct SchedulerService instance
+        this._playbackService.initializeSchedulerAdapter();
 
         logger.debug(NAMESPACES.AUDIO, 'PlaybackFacade created');
     }

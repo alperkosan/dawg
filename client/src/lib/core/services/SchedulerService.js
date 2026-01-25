@@ -44,6 +44,10 @@ export class SchedulerService {
     constructor(engine) {
         this.engine = engine;
 
+        // 🔍 DEBUG: Instance tracking to detect multiple SchedulerService instances
+        this._instanceId = `SS-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+        console.log(`🆕 [SchedulerService] Created instance: ${this._instanceId}`);
+
         // Scheduling settings
         this.lookAheadTime = 0.1;    // 100ms look-ahead
         this.scheduleAhead = 0.15;   // Schedule 150ms ahead
@@ -95,8 +99,16 @@ export class SchedulerService {
      */
     start() {
         if (this._tickInterval) {
+            console.log(`⚠️ [SchedulerService:${this._instanceId}] start() called but ticker already running (ignoring)`);
             return;
         }
+
+        console.log(`🚀 [SchedulerService:${this._instanceId}] Starting ticker:`, {
+            tickInterval: this.tickInterval,
+            hasAudioContext: !!this.audioContext,
+            hasInstruments: !!this.instruments,
+            instrumentCount: this.instruments?.size || 0
+        });
 
         this._tickInterval = setInterval(() => {
             this._tick();
@@ -129,6 +141,9 @@ export class SchedulerService {
      * @returns {string} Event ID
      */
     scheduleNote(instrumentId, note, startTime, duration) {
+        // 🔍 DEBUG: Log first few scheduleNote() calls
+        const beforeSize = this.scheduledEvents.size;
+
         const noteOnEvent = new ScheduledEvent(
             ScheduledEventType.NOTE_ON,
             startTime,
@@ -144,6 +159,22 @@ export class SchedulerService {
         // Store events
         this.scheduledEvents.set(noteOnEvent.id, noteOnEvent);
         this.scheduledEvents.set(noteOffEvent.id, noteOffEvent);
+
+        const afterSize = this.scheduledEvents.size;
+
+        // 🔍 DEBUG: Log first 3 scheduleNote() calls
+        if (this.stats.eventsScheduled < 6) {  // first 3 notes = 6 events (on+off)
+            console.log(`📝 [SchedulerService:${this._instanceId}] scheduleNote() called:`, {
+                instanceId: this._instanceId,
+                instrumentId,
+                pitch: note.pitch,
+                startTime: startTime.toFixed(3),
+                duration: duration.toFixed(3),
+                beforeMapSize: beforeSize,
+                afterMapSize: afterSize,
+                diff: afterSize - beforeSize
+            });
+        }
 
         // Track by instrument and note
         if (!this.scheduledNotes.has(instrumentId)) {
@@ -282,12 +313,13 @@ export class SchedulerService {
     /**
      * Cancel all scheduled events
      * @param {boolean} forceReleaseActive - If true, immediately releases currently playing notes
+     * @param {boolean} ignoreSafeThreshold - If true, cancel even imminent events (for loop restart)
      */
-    cancelAll(forceReleaseActive = true) {
+    cancelAll(forceReleaseActive = true, ignoreSafeThreshold = false) {
         const currentTime = this.audioContext?.currentTime || 0;
 
         // ✅ FIX #3: Safe threshold - don't cancel events within 1ms of executing
-        // This prevents race condition where we cancel an event that's about to trigger
+        // UNLESS ignoreSafeThreshold=true (loop restart needs to cancel EVERYTHING)
         const SAFE_THRESHOLD_MS = 0.001; // 1ms
         const safeThreshold = currentTime + SAFE_THRESHOLD_MS;
 
@@ -297,8 +329,8 @@ export class SchedulerService {
             if (event.executed) return;
 
             // ✅ FIX #3: Keep events that are about to execute (within 1ms)
-            // Let them finish naturally rather than causing audio glitches
-            if (event.time && event.time <= safeThreshold) {
+            // UNLESS ignoreSafeThreshold=true (loop restart)
+            if (!ignoreSafeThreshold && event.time && event.time <= safeThreshold) {
                 preservedCount++;
                 return; // Skip cancellation
             }
@@ -397,10 +429,49 @@ export class SchedulerService {
      * @private
      */
     _tick() {
-        if (!this.audioContext) return;
+        // 🔍 CRITICAL DEBUG: Log first 3 ticks to verify ticker is running
+        if (!this._tickCount) this._tickCount = 0;
+        this._tickCount++;
+
+        if (this._tickCount <= 3) {
+            console.log(`⏰ [SchedulerService:${this._instanceId}] _tick #${this._tickCount}:`, {
+                instanceId: this._instanceId,
+                hasAudioContext: !!this.audioContext,
+                hasInstruments: !!this.instruments,
+                instrumentCount: this.instruments?.size || 0,
+                eventsInMap: this.scheduledEvents.size
+            });
+        }
+
+        if (!this.audioContext) {
+            if (this._tickCount <= 3) {
+                console.warn(`⚠️ [SchedulerService] No audioContext! Ticker running but can't execute.`);
+            }
+            return;
+        }
 
         const currentTime = this.audioContext.currentTime;
         const lookAheadEnd = currentTime + this.lookAheadTime;
+
+        // 🔍 DEBUG: Log tick activity
+        // Log first 5 times we have events, OR if we have events and haven't executed any yet
+        const shouldLog = (this.stats.eventsExecuted < 5 && this.scheduledEvents.size > 0) ||
+                         (this.scheduledEvents.size > 0 && this.stats.eventsExecuted === 0);
+
+        if (shouldLog) {
+            const events = Array.from(this.scheduledEvents.values());
+            const pendingEvents = events.filter(e => !e.cancelled && !e.executed);
+            console.log(`⏰ [SchedulerService] _tick():`, {
+                currentTime: currentTime.toFixed(3),
+                lookAheadEnd: lookAheadEnd.toFixed(3),
+                totalEvents: this.scheduledEvents.size,
+                pendingEvents: pendingEvents.length,
+                executedSoFar: this.stats.eventsExecuted,
+                firstEventTime: events[0]?.time.toFixed(3),
+                firstEventType: events[0]?.type,
+                firstEventExecuted: events[0]?.executed
+            });
+        }
 
         // ✅ DEBUG: Log tick state
         /*
@@ -446,32 +517,38 @@ export class SchedulerService {
 
         switch (event.type) {
             case ScheduledEventType.NOTE_ON: {
-                /* ✅ DEBUG: Log instrument lookup
-                const availableInstruments = Array.from(this.instruments?.keys() || []);
-                logger.debug(NAMESPACES.AUDIO, `🎵 Attempting to trigger note:`, {
-                    instrumentId,
-                    pitch: note.pitch,
-                    velocity: note.velocity,
-                    availableInstruments: availableInstruments.length,
-                    instrumentIds: availableInstruments
-                });
-                */
+                // 🔍 DEBUG: Log first few note executions
+                if (this.stats.eventsExecuted <= 3) {
+                    const availableInstruments = Array.from(this.instruments?.keys() || []);
+                    console.log(`🎵 [SchedulerService] Executing NOTE_ON #${this.stats.eventsExecuted}:`, {
+                        instrumentId,
+                        pitch: note.pitch,
+                        velocity: note.velocity,
+                        time: event.time.toFixed(3),
+                        currentTime: this.audioContext.currentTime.toFixed(3),
+                        availableInstruments
+                    });
+                }
 
                 const instrument = this.instruments?.get(instrumentId);
 
                 if (!instrument) {
-                    logger.warn(NAMESPACES.AUDIO, `❌ Instrument not found: ${instrumentId}`, {
+                    const availableInstruments = Array.from(this.instruments?.keys() || []);
+                    console.error(`❌ [SchedulerService] Instrument not found: ${instrumentId}`, {
                         availableInstruments
                     });
                     return;
                 }
 
                 if (typeof instrument.triggerNote !== 'function') {
-                    logger.warn(NAMESPACES.AUDIO, `❌ Instrument ${instrumentId} has no triggerNote method`);
+                    console.error(`❌ [SchedulerService] Instrument ${instrumentId} has no triggerNote method`, {
+                        instrumentType: instrument.constructor.name,
+                        methods: Object.getOwnPropertyNames(Object.getPrototypeOf(instrument))
+                    });
                     return;
                 }
 
-                //logger.debug(NAMESPACES.AUDIO, `✅ Triggering note on ${instrumentId}: pitch=${note.pitch}, velocity=${note.velocity}`);
+                console.log(`✅ [SchedulerService] Triggering note on ${instrumentId}: pitch=${note.pitch}, velocity=${note.velocity}, time=${event.time.toFixed(3)}`);
                 instrument.triggerNote(note.pitch, note.velocity || 0.8, event.time);
                 break;
             }

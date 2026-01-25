@@ -13,6 +13,8 @@
 import { logger, NAMESPACES } from '../../utils/debugLogger.js';
 import { idleDetector } from '../../utils/IdleDetector.js';
 import EventBus from '../EventBus.js';
+import { PlaybackServiceAdapter } from './PlaybackServiceAdapter.js';
+import { initSchedulerDiagnostics } from '../scheduling/SchedulerDiagnostics.js';
 
 export class PlaybackService {
     /**
@@ -28,6 +30,9 @@ export class PlaybackService {
         // ✅ CRITICAL FIX: Position now reads from Transport (Single Source of Truth)
         this._currentPosition = 0; // Backing field for fallback only
         this.startTime = 0;
+
+        // ✅ SCHEDULER SERVICE: Backing field (can be set by PlaybackFacade or use engine's lazy getter)
+        this._schedulerService = null;
 
         // Mode
         this.playbackMode = 'pattern'; // 'pattern' | 'song'
@@ -45,6 +50,9 @@ export class PlaybackService {
         // Active pattern
         this.activePatternId = null;
 
+        // ✅ PHASE 0 FIX: Tick-based loop restart deduplication
+        this._lastHandledLoopTick = -1; // Track last handled loop boundary tick
+
         // Position update rate
         this.positionUpdateRate = 60; // Hz
         this._positionInterval = null;
@@ -57,6 +65,34 @@ export class PlaybackService {
 
         // ✅ LIVE NOTE SCHEDULING: Bind global events for immediate note scheduling
         this._bindGlobalEvents();
+
+        // ===== NEW: CONTINUOUS SCHEDULER ADAPTER =====
+        // Will be initialized by PlaybackFacade after schedulerService is set
+        this.schedulerAdapter = null;
+
+        // ===== DIAGNOSTICS =====
+        // Will be initialized after schedulerAdapter is set
+        this._diagnosticsInitialized = false;
+    }
+
+    /**
+     * Initialize ContinuousScheduler adapter
+     * Called by PlaybackFacade after schedulerService is set
+     */
+    initializeSchedulerAdapter() {
+        if (this.schedulerAdapter) {
+            console.warn('⚠️ [PlaybackService] SchedulerAdapter already initialized');
+            return;
+        }
+
+        this.schedulerAdapter = new PlaybackServiceAdapter(this);
+        console.log('✨ [PlaybackService] ContinuousScheduler adapter initialized');
+
+        // Initialize diagnostics after adapter is ready
+        if (!this._diagnosticsInitialized) {
+            initSchedulerDiagnostics(this);
+            this._diagnosticsInitialized = true;
+        }
     }
 
     // ✅ UNIFIED TRANSPORT: SAB-backed getters (delegate to NativeTransportSystem)
@@ -111,6 +147,27 @@ export class PlaybackService {
      */
     get transport() {
         return this.engine.transport;
+    }
+
+    /**
+     * Get scheduler service (from backing field or parent engine)
+     * @returns {SchedulerService}
+     */
+    get schedulerService() {
+        // Check backing field first (set by PlaybackFacade)
+        if (this._schedulerService) {
+            return this._schedulerService;
+        }
+        // Fallback to engine's lazy getter
+        return this.engine.schedulerService;
+    }
+
+    /**
+     * Set scheduler service (used by PlaybackFacade)
+     * @param {SchedulerService} value
+     */
+    set schedulerService(value) {
+        this._schedulerService = value;
     }
 
     /**
@@ -189,7 +246,14 @@ export class PlaybackService {
 
             // ✅ CRITICAL FIX: Schedule notes for playback
             // This was missing - PlaybackManager calls _scheduleContent() but facade didn't
-            if (this.schedulerService) {
+
+            // ✅ CRITICAL: Skip old scheduling if ContinuousScheduler is active
+            if (this.schedulerAdapter?.useContinuousScheduler) {
+                // ContinuousScheduler handles ALL scheduling
+                // Old SchedulerService is only used for event execution (started by adapter)
+                logger.info(NAMESPACES.AUDIO, '✅ ContinuousScheduler active - skipping old pattern scheduling');
+            } else if (this.schedulerService) {
+                // OLD SYSTEM: Only runs if ContinuousScheduler is disabled
                 logger.info(NAMESPACES.AUDIO, '🎵 Scheduling notes for playback...');
                 try {
                     // ✅ CRITICAL: Start the scheduler tick loop
@@ -258,10 +322,15 @@ export class PlaybackService {
                 } catch (error) {
                     logger.error(NAMESPACES.AUDIO, 'Failed to schedule notes:', error);
                 }
-            }
+            } // END: Old scheduling system
 
             // Start position tracking
             this._startPositionTracking();
+
+            // ===== NEW: START CONTINUOUS SCHEDULER =====
+            if (this.schedulerAdapter) {
+                this.schedulerAdapter.onPlayStart();
+            }
 
             // Emit event
             this._emit('play', { startStep: playPosition, time: this.startTime });
@@ -316,6 +385,11 @@ export class PlaybackService {
             // Stop position tracking
             this._stopPositionTracking();
 
+            // ===== NEW: STOP CONTINUOUS SCHEDULER =====
+            if (this.schedulerAdapter) {
+                this.schedulerAdapter.onPlayStop();
+            }
+
             // Emit event
             this._emit('stop', { time: this.audioContext?.currentTime });
 
@@ -354,6 +428,11 @@ export class PlaybackService {
             // ✅ UNIFIED: State now comes from SAB via getters
             this._fallbackIsPlaying = false;
             this._fallbackIsPaused = true;
+
+            // ===== NEW: PAUSE CONTINUOUS SCHEDULER =====
+            if (this.schedulerAdapter) {
+                this.schedulerAdapter.onPlayPause();
+            }
 
             // Emit event
             this._emit('pause', { position: this.currentPosition });
@@ -465,6 +544,11 @@ export class PlaybackService {
 
             // Restart position tracking
             this._startPositionTracking();
+
+            // ===== NEW: RESUME CONTINUOUS SCHEDULER =====
+            if (this.schedulerAdapter) {
+                this.schedulerAdapter.onPlayResume();
+            }
 
             // Emit event
             this._emit('resume', { position: resumePosition });
@@ -895,19 +979,38 @@ export class PlaybackService {
      * Handle loop restart event from transport
      * Reschedules the pattern from the loop start position
      * @private
+     * @param {Object} event - Loop event data {fromTick, toTick, time, nextLoopStartTime}
      */
-    async _handleLoopRestart() {
+    async _handleLoopRestart(event) {
+        // ===== NEW: NOTIFY CONTINUOUS SCHEDULER (NATURAL HANDLING) =====
+        // With ContinuousScheduler, loop restart is automatic - it detects position jump
+        // This hook is informational only, no reschedule needed
+        if (this.schedulerAdapter) {
+            this.schedulerAdapter.onLoopRestart(event);
+
+            // ✅ CRITICAL: If ContinuousScheduler is enabled, SKIP old reschedule logic
+            // ContinuousScheduler handles loop restart naturally via position jump detection
+            if (this.schedulerAdapter.useContinuousScheduler) {
+                console.log('✅ [PlaybackService] Loop restart handled by ContinuousScheduler (skipping old reschedule)');
+                return; // Early exit - don't run old reschedule code
+            }
+        }
+
         if (!this.isPlaying || !this.schedulerService) {
             return;
         }
 
-        // ✅ FIX: Debounce loop handling to prevent duplicate schedules
-        if (this._isHandlingLoop) {
-            console.log('🚫 [LOOP RESTART] Already handling, skip (debounce)');
-            logger.debug(NAMESPACES.AUDIO, '⚠️ Loop restart ignored (already handling)');
+        // ✅ PHASE 0 FIX: Tick-based deduplication instead of timeout-based debounce
+        // Loop boundary is identified by tick position, not time
+        // Multiple listeners/cascade calls for SAME tick = duplicate, reject immediately
+        const currentLoopTick = event?.fromTick ?? this.engine?.transport?.currentTick ?? 0;
+
+        if (this._lastHandledLoopTick === currentLoopTick) {
+            // Silent skip - already handled this exact loop boundary
+            // No log spam, this is expected behavior when multiple listeners cascade
             return;
         }
-        this._isHandlingLoop = true;
+        this._lastHandledLoopTick = currentLoopTick;
 
         const loopStartTimestamp = performance.now();
         console.log(`\n🎬 [LOOP RESTART START] @ ${loopStartTimestamp.toFixed(1)}ms`);
@@ -992,18 +1095,10 @@ export class PlaybackService {
             logger.error(NAMESPACES.AUDIO, 'Failed to reschedule on loop restart:', error);
             console.error('❌ [LOOP RESTART ERROR]', error);
         } finally {
-            // Allow next loop event after a short delay
-            setTimeout(() => {
-                this._isHandlingLoop = false;
-                const loopEndTimestamp = performance.now();
-                const duration = loopEndTimestamp - loopStartTimestamp;
-                console.log(`✅ [LOOP RESTART END] Duration: ${duration.toFixed(1)}ms\n`);
-
-                // ✅ CRITICAL: Clear the transport's restart flag
-                if (event?._clearRestartFlag) {
-                    event._clearRestartFlag();
-                }
-            }, 50);
+            // ✅ PHASE 0 FIX: No timeout needed with tick-based deduplication
+            const loopEndTimestamp = performance.now();
+            const duration = loopEndTimestamp - loopStartTimestamp;
+            console.log(`✅ [LOOP RESTART END] Tick ${currentLoopTick.toFixed(1)}, Duration: ${duration.toFixed(1)}ms\n`);
         }
     }
 
@@ -1191,7 +1286,16 @@ export class PlaybackService {
             return;
         }
 
-        // ✅ LIVE SCHEDULING: If playing and not paused, schedule immediately
+        // ✅ CRITICAL: Skip old immediate scheduling if ContinuousScheduler is active
+        // ContinuousScheduler handles all scheduling via dirty flag system
+        if (this.schedulerAdapter?.useContinuousScheduler) {
+            // ContinuousScheduler will pick up changes automatically via dirty flag
+            // No immediate scheduling needed - adapter already called markDirty()
+            console.log(`✅ [PlaybackService] Note added - delegating to ContinuousScheduler`);
+            return;
+        }
+
+        // ✅ LIVE SCHEDULING: If playing and not paused, schedule immediately (OLD SYSTEM)
         if (this.isPlaying && !this.isPaused && notes && notes.length > 0) {
             console.log(`✅ Playback active - scheduling ${notes.length} notes immediately`);
             notes.forEach(note => {
@@ -1215,7 +1319,15 @@ export class PlaybackService {
 
         console.log('🎵 PlaybackService._handleNoteRemoved:', { instrumentId, noteId });
 
-        // ✅ If playing, stop the note if it's currently sounding
+        // ✅ CRITICAL: Skip old note removal if ContinuousScheduler is active
+        // ContinuousScheduler handles all scheduling via dirty flag system
+        if (this.schedulerAdapter?.useContinuousScheduler) {
+            // ContinuousScheduler will pick up changes automatically via dirty flag
+            console.log(`✅ [PlaybackService] Note removed - delegating to ContinuousScheduler`);
+            return;
+        }
+
+        // ✅ If playing, stop the note if it's currently sounding (OLD SYSTEM)
         if (this.isPlaying && !this.isPaused && note && instrumentId) {
             const instrument = this.engine.instruments?.get(instrumentId);
             if (instrument && note.pitch && typeof instrument.releaseNote === 'function') {
